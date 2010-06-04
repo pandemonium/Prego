@@ -14,7 +14,7 @@ import java.util.concurrent.Executor
  */
 object Server {
 
-  abstract class Control {
+  trait Control {
     implicit def byNameIsRunnable(body: => Unit): Runnable = new Runnable {
       def run = body
     }
