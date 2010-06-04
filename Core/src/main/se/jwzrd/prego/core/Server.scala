@@ -31,27 +31,29 @@ object Server {
   }
 
   trait Http { self: Parsing =>
-    val HttpLineSeparator = "\r\n"
+    val LineSeparator = "\r\n"
+    val HeaderNameValueSeparator = ": "
+    val Empty = ""
+    val RequestItemSeparator = ' '
 
-    def parseRequestLine(line: String) = line split ' ' match {
+    def parseRequestLine(line: String) = line split RequestItemSeparator match {
       case Array(a, b, c) => (a, b, c)
     }
 
     def parseHeaders(lines: Iterator[String]) =
       lines takeWhile isHeaderLine map parseHeader
 
-    private def parseHeader(line: String) = line split ": " match {
+    private def parseHeader(line: String) = line split HeaderNameValueSeparator match {
       case Array(name, value) => (name, value trim)
     }
 
     private def isHeaderLine(line: String) = !(line trim() isEmpty)
 
     def parseLine(source: Iterator[Char]) =
-      (parseUntil(source)(HttpLineSeparator) right) getOrElse ""
+      (parseUntil(source)(LineSeparator) right) getOrElse Empty
   }
 
   trait Parsing {
-
     type ParseResult = String Either String
 
     def parseUntil(source: Iterator[Char])(delimitor: Seq[Char]): ParseResult = {
@@ -105,17 +107,23 @@ object Server {
         val lines = Iterator continually parseLine(s)
         val headers = Map() ++ parseHeaders (lines)
 
-        Request(method, path, version, headers, s)
+        new Request(method, path, version, headers, s)
       }
 
       def sendResponse(): Unit = {}
     }
 
-    case class Request(method: String,
-                       path: String,
-                       httpVersion: String,
-                       headers: Map[String, String],
-                       data: Source)
+    class Request(val method: String,
+                  val path: String,
+                  val httpVersion: String,
+                  val headers: Map[String, String],
+                  val data: Source) {
+      override def toString = {
+//        if (data hasNext) println("Hi")   // Hangs because there's nothing more to read
+        
+        method + "|" + path + "|" + httpVersion + "|" + headers + "|"/* + (if (data.hasNext) new String(data toArray) else "")*/
+      }
+    }
   }
 
   def main(args: Array[String]) = HttpServer run
