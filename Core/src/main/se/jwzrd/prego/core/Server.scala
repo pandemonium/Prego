@@ -9,7 +9,7 @@ import java.lang.String
 import collection.Seq
 
 /**
- * @author Patrik Andersson <pa@king.com>
+ * @author Patrik Andersson <pandersson@gmail.com>
  */
 object Server {
   val serverSocket = new ServerSocket(9090)

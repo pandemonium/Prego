@@ -6,7 +6,7 @@ import collection.immutable.List
 import java.util.ArrayList
 
 /**
- * @author Patrik Andersson <pa@king.com>
+ * @author Patrik Andersson <pandersson@gmail.com>
  */
 object Euler {
   lazy val fibonacci: Stream[Long] = 1 #:: 2 #:: (fibonacci.zip (fibonacci tail) map (p => p._1 + p._2))

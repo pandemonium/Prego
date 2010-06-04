@@ -3,7 +3,7 @@ package se.jwzrd.prego.core
 import xml.NodeSeq
 
 /**
- * @author Patrik Andersson <pa@king.com>
+ * @author Patrik Andersson <pandersson@gmail.com>
  */
 
 object Core {
@@ -21,7 +21,7 @@ object Core {
   trait Request {
     def get[B](p: Parameter): Option[B]
 
-    def get[B](p: Parameter): Either[String, B]
+//    def get[B](p: Parameter): Either[String, B]
 
     // method for reading from the request entity
   }
@@ -48,12 +48,14 @@ object Core {
     def commit(s: S): Unit
   }
 
+/*
   abstract class ServletResponseAdapter extends Response {
     def commit: Unit = {}
   }
+*/
 
   trait ResponseBuilder[A] {
-    def build(source: A): Response
+    def build(source: A): Response[A]
   }
 
   implicit object XmlCanBeAResponse extends ResponseBuilder[NodeSeq] {

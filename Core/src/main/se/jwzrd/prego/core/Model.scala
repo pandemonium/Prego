@@ -3,7 +3,7 @@ package se.jwzrd.prego.core
 import java.util.Date
 
 /**
- * @author Patrik Andersson <pa@king.com>
+ * @author Patrik Andersson <pandersson@gmail.com>
  */
 object Model {
   /**
