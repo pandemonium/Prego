@@ -6,114 +6,117 @@ import java.net.{Socket, ServerSocket}
 import annotation.tailrec
 import io.Source
 import java.lang.String
-import collection.Seq
+import collection.{Iterator, Seq}
+import java.util.concurrent.Executor
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
  */
 object Server {
-  val serverSocket = new ServerSocket(9090)
-  val threaded = Dispatch.getInstance.getAsyncExecutor(Priority.NORMAL)
-  
-  def run = repeatedly {
-    val socket = serverSocket accept
 
-    concurrently {
-      dispatch (Connection(socket))
-    }
-  }
-
-  @tailrec
-  private def repeatedly(body: => Unit): Unit = {
-    body; repeatedly (body)
-  }
-
-  private def concurrently(body: => Unit) = threaded execute body
-
-  private def dispatch(connection: Connection) {
-    println(connection readRequest)
-  }
-
-  implicit def byNameIsRunnable(body: => Unit): Runnable = new Runnable {
-    def run = body
-  }
-
-  private def parseRequestLine(line: String) = line split ' ' match {
-    case Array(a, b, c) => (a, b, c)
-  }
-
-  private def parseHeaders(lines: Iterator[String]) =
-    lines takeWhile isHeaderLine map parseHeader
-
-  private def parseHeader(line: String) = line split ": " match {
-    case Array(name, value) => (name, value trim)
-  }
-
-  private def isHeaderLine(line: String) = !(line trim() isEmpty)
-
-  case class Connection(socket: Socket) {
-    def readRequest(): Request = {
-      val s = Source fromInputStream(socket getInputStream)
-
-      // should not do getLines; just do takeWhile NotLineSeparator instead. That way the post
-      // data won't be killed
-      val lines = s getLines ("\r\n")
-
-      val (method, path, version) = parseRequestLine (lines next)
-      val headers = Map() ++ parseHeaders (lines)
-
-      Request(method, path, version, headers, null)      
+  abstract class Control {
+    implicit def byNameIsRunnable(body: => Unit): Runnable = new Runnable {
+      def run = body
     }
 
-    def sendResponse(): Unit = {}
+    def repeatedly(body: => Unit) = eternally(body)
+
+    @tailrec
+    private def eternally(body: => Unit): Unit = {
+      body; eternally(body)
+    }
+
+    def concurrently(body: => Unit)(implicit executor: Executor) =
+      executor execute body
   }
 
-  case class Request(method: String,
-                     path: String,
-                     httpVersion: String,
-                     headers: Map[String, String],
-                     data: Source)
+  trait Http { self: Parsing =>
+    val HttpLineSeparator = "\r\n"
 
-  private def takeUntil(source: Iterator[Char])(limit: Seq[Char]): Iterator[Char] Either String = {
-    val head = limit head
-    val taken = source takeWhile (head !=)
+    def parseRequestLine(line: String) = line split ' ' match {
+      case Array(a, b, c) => (a, b, c)
+    }
 
-    print("[")
-    taken foreach (print); println("]")
-    print("[")
-    source foreach (print); println("]")
+    def parseHeaders(lines: Iterator[String]) =
+      lines takeWhile isHeaderLine map parseHeader
 
-    println("[" + (limit tail) + "]")
+    private def parseHeader(line: String) = line split ": " match {
+      case Array(name, value) => (name, value trim)
+    }
 
-    if (prefixMatches(source)(limit tail))
-      Left(taken)
-    else
-      Right("Foo")
+    private def isHeaderLine(line: String) = !(line trim() isEmpty)
+
+    def parseLine(source: Iterator[Char]) =
+      (parseUntil(source)(HttpLineSeparator) right) getOrElse ""
   }
 
-  private def prefixMatches(source: Iterator[Char])(limit: Seq[Char]): Boolean = {
-/*
-    source foreach (print)
-    println()
+  trait Parsing {
 
-    println("[" + limit + "]")
-*/
+    type ParseResult = String Either String
 
-    if ((source hasNext) && (limit length) >= 1)
-      ((limit head) == (source next)) && (((limit length) == 1) || prefixMatches(source)(limit tail))
-    else
-      (!(source hasNext) && (limit isEmpty))
+    def parseUntil(source: Iterator[Char])(delimitor: Seq[Char]): ParseResult = {
+      if (!delimitor.isEmpty) {
+        val head = delimitor head
+        val taken = source takeWhile (head !=) toArray
+
+        if (prefixMatches(source)(delimitor tail))
+          emit(taken)
+        else
+          expected(delimitor)
+      } else
+        emit(source toArray)
+    }
+
+    def emit(source: Array[Char]) =
+      Right(new String(source toArray))
+
+    def expected(what: Seq[Char]) =
+      Left("expected [" + what + "]")
+
+    def prefixMatches(source: Iterator[Char])(limit: Seq[Char]): Boolean =
+      if (source.hasNext && !limit.isEmpty) {
+        val tail = limit.tail
+        limit.head == source.next && (tail.isEmpty || prefixMatches(source)(tail))
+      } else
+        limit.isEmpty    
   }
 
-  def main(args: Array[String]) = {
-    //Server run
+  object HttpServer extends Control with Parsing with Http {
+    lazy val serverSocket = new ServerSocket(9090)
+    implicit lazy val threaded = Dispatch.getInstance.getAsyncExecutor(Priority.NORMAL)
 
-/*
-    val b = Server.prefixMatches(" world".iterator)(" ")
-    println(b)
-*/
+    def run = repeatedly {
+      val socket = serverSocket accept
 
-    val s = Server.takeUntil("Hello, world".iterator)(", ")
-    println(s)
+      concurrently {
+        dispatch (Connection(socket))
+      }
+    }
+
+    private def dispatch(connection: Connection) {
+      println(connection readRequest)
+    }
+
+    case class Connection(socket: Socket) {
+      def readRequest(): Request = {
+        val s = Source fromInputStream(socket getInputStream)
+
+        val (method, path, version) = parseRequestLine (parseLine (s))
+        val lines = Iterator continually parseLine(s)
+        val headers = Map() ++ parseHeaders (lines)
+
+        Request(method, path, version, headers, s)
+      }
+
+      def sendResponse(): Unit = {}
+    }
+
+    case class Request(method: String,
+                       path: String,
+                       httpVersion: String,
+                       headers: Map[String, String],
+                       data: Source)
   }
+
+  def main(args: Array[String]) = HttpServer run
 }
