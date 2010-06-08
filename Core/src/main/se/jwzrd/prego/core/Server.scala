@@ -8,6 +8,8 @@ import io.Source
 import java.lang.String
 import collection.{Iterator, Seq}
 import java.util.concurrent.Executor
+import java.io._
+import xml.NodeSeq
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
@@ -85,8 +87,16 @@ object Server {
 
   object HttpServer extends Control with Parsing with Http {
     lazy val serverSocket = new ServerSocket(9090)
+    lazy val connectedClients: Iterator[Socket] = Iterator continually (serverSocket accept)
     implicit lazy val threaded = Dispatch.getInstance.getAsyncExecutor(Priority.NORMAL)
 
+    def run = connectedClients foreach { s =>
+      concurrently {
+        dispatch(Connection(s))
+      }
+    }
+
+/*
     def run = repeatedly {
       val socket = serverSocket accept
 
@@ -94,12 +104,29 @@ object Server {
         dispatch (Connection(socket))
       }
     }
+*/
+
+    implicit def xmlIsResponseLike(xml: NodeSeq): ResponseLike = new ResponseLike {
+      // this is awkward
+      def writeContentTo(sink: OutputStream) = {
+        val writer: OutputStreamWriter = new OutputStreamWriter (sink)
+        writer write(xml toString)
+        writer flush()
+      }
+
+      val hasContent = true
+      val statusMessage = "Ok"
+      val status = 200
+      val contentType = "text/xml"
+    }
 
     private def dispatch(connection: Connection) {
       println(connection readRequest)
+
+      connection.sendResponse(<h1>Hello, world</h1>)
     }
 
-    case class Connection(socket: Socket) {
+    case class Connection(socket: Socket) extends ResourceUsage { Http =>
       def readRequest(): Request = {
         val s = Source fromInputStream(socket getInputStream)
 
@@ -110,7 +137,88 @@ object Server {
         new Request(method, path, version, headers, s)
       }
 
-      def sendResponse(): Unit = {}
+      def sendResponse[A <% ResponseLike](response: A) = 
+        (if (response hasContent)
+          write(responseWithContent) _
+         else
+          write(emptyResponse) _) (response)
+
+      def responseWithContent[A <% ResponseLike](responseBody: A): ResponseMessage = {
+        val buffer = new ByteArrayOutputStream (4096)
+        responseBody writeContentTo buffer
+
+        val headers = Map ("Content-Type" -> (responseBody contentType),
+                           "Content-Length" -> (buffer size).toString)
+
+        ResponseMessage (responseBody status,
+                         responseBody statusMessage,
+                         headers,
+                         Some (buffer toByteArray))
+      }
+
+      def emptyResponse[A <% ResponseLike](responseBody: A) =
+        ResponseMessage (responseBody status,
+                         responseBody statusMessage,
+                         Map (),
+                         None)
+
+      type ResponseBuilder = ResponseLike => ResponseMessage
+
+      def write(build: ResponseBuilder)(response: ResponseLike) = build (response) match {
+        case ResponseMessage (status, message, headers, content) =>
+          withResource (socket) { os =>
+            implicit val sink = new OutputStreamWriter (os)
+            writeStatusLine (status, message)
+            writeHeaders (headers)
+            sink.flush()
+            
+            content foreach os.write
+            sink.flush()
+          }
+      }
+
+      def writeStatusLine(status: Int, message: String)(implicit sink: Writer) =
+        writeLine ("HTTP/1.1 " + status + " " + message)
+
+      def writeHeaders(headers: Map[String, String])(implicit sink: Writer) = {
+        headers foreach writeHeader; writeLine ()
+      }
+
+      def writeHeader(header: (String, String))(implicit sink: Writer) = header match {
+        case (k, v) => writeLine(k + ": " + v)
+      }
+
+      def writeLine(line: String = Empty)(implicit sink: Writer) =
+        sink write(line + LineSeparator)
+    }
+
+    trait ResourceUsage {
+      type Streamed = {
+        def getOutputStream(): OutputStream
+      }
+
+      def withResource(resource: Streamed)(using: OutputStream => Unit): Unit = {
+        val os = resource getOutputStream
+
+        try using(os)
+        finally {
+          os flush; os close
+        }
+      }
+    }
+
+    case class ResponseMessage(status: Int,
+                               statusMessage: String,
+                               headers: Map[String, String],
+                               content: Option[Array[Byte]])
+
+    trait ResponseLike {
+      val contentType: String
+      val status: Int
+      val statusMessage: String
+      val hasContent: Boolean
+
+      def writeContentTo(sink: OutputStream): Unit
     }
 
     class Request(val method: String,
