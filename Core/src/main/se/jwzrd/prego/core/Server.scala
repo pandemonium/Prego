@@ -2,7 +2,6 @@ package se.jwzrd.prego.core
 
 import com.apple.concurrent.Dispatch
 import com.apple.concurrent.Dispatch.Priority
-import java.net.{Socket, ServerSocket}
 import annotation.tailrec
 import io.Source
 import java.lang.String
@@ -11,7 +10,7 @@ import java.util.concurrent.Executor
 import java.io._
 import xml.NodeSeq
 import Iterator.continually
-
+import java.net._
 
 /**
  * Inheritance and partitioning in traits is fucked.
@@ -25,6 +24,10 @@ object Server {
       def run = body
     }
 
+    def run: Unit
+
+    def stop: Unit
+
     def repeatedly(body: => Unit) = eternally(body)
 
     @tailrec
@@ -36,11 +39,21 @@ object Server {
       executor execute body
   }
 
-  trait Http { self: Parsing with ResourceUsage =>
+  trait Http extends Parsing {
     val LineSeparator = "\r\n"
     val HeaderNameValueSeparator = ": "
     val Empty = ""
     val RequestItemSeparator = ' '
+
+    def parseRequest(inputStream: InputStream): Request = {
+      val s = Source fromInputStream (inputStream)
+
+      val (method, path, version) = parseRequestLine (parseLine (s))
+      val lines = continually (parseLine (s))
+      val headers = Map() ++ parseHeaders (lines)
+
+      new Request(method, path, version, headers, s)
+    }
 
     def parseRequestLine(line: String) = line split RequestItemSeparator match {
       case Array(a, b, c) => (a, b, c)
@@ -100,16 +113,47 @@ object Server {
       val headers = Map ("Content-Type" -> (body contentType),
                          "Content-Length" -> (body contentLength).toString)
 
-      Response (status, message, headers, Some(body))
+      new Response (status, message, headers, Some(body))
     }
 
     def emptyResponse(status: Int = 200, message: String = "Ok") =
-      Response (status, message, Map empty, None)
+      new Response (status, message, Map empty, None)
 
-    case class Response(status: Int,
-                        statusMessage: String,
-                        headers: Map[String, String],
-                        body: Option[MessageBody])
+    trait ResponseControl {
+      protected def statusReply(status: Int, message: String): Unit
+      protected def redirect(target: String): Unit
+    }
+
+    trait Routing {
+      protected def route[A <% MessageBody](pattern: String)(handler: => A): Unit
+    }
+
+    class Response(status: Int,
+                   message: String,
+                   headers: Map[String, String],
+                   body: Option[MessageBody]) extends Http {
+      def apply(outputStream: OutputStream): this.type = {
+        implicit val sink = new OutputStreamWriter (outputStream)
+        writeStatusLine (status, message)
+        writeHeaders (headers)
+        writeLine ()
+        sink flush ()
+
+        body foreach (_.writeContentTo (outputStream))
+        outputStream flush ()
+
+        this
+      }
+    }
+
+    class Request(val method: String,
+                  val path: String,
+                  val httpVersion: String,
+                  val headers: Map[String, String],
+                  val data: Source) {
+      override def toString =
+        method + "|" + path + "|" + httpVersion + "|" + headers + "|"
+    }
   }
 
   trait Parsing {
@@ -157,8 +201,19 @@ object Server {
     }
   }
 
-  object HttpServer extends Control with Parsing with ResourceUsage with Http {
-    lazy val serverSocket = new ServerSocket(9090)
+  object HttpServer extends (SocketAddress => Control) {
+    def apply(address: SocketAddress) =
+      new HttpServer(address)
+  }
+
+  class HttpServer(val address: SocketAddress) extends Control with ResourceUsage with Http {
+    lazy val serverSocket = {
+      val ss = new ServerSocket
+      ss.bind(address)
+
+      ss
+    }
+
     implicit lazy val threaded = Dispatch.getInstance getAsyncExecutor(Priority NORMAL)
 
     def run = continually (serverSocket accept) foreach { s =>
@@ -166,6 +221,9 @@ object Server {
         dispatch(Connection(s))
       }
     }
+
+    def stop =
+      serverSocket.close
 
     private def dispatch(connection: Connection) {
       val request = connection readRequest
@@ -179,15 +237,8 @@ object Server {
     }
 
     case class Connection(socket: Socket) extends ResourceUsage { Http =>
-      def readRequest(): Request = {
-        val s = Source fromInputStream(socket getInputStream)
-
-        val (method, path, version) = parseRequestLine (parseLine (s))
-        val lines = continually (parseLine (s))
-        val headers = Map() ++ parseHeaders (lines)
-
-        new Request(method, path, version, headers, s)
-      }
+      def readRequest =
+        parseRequest(socket getInputStream)
 
       def sendResponse[A <% MessageBody](body: A, status: Int = 200, message: String = "Ok"): Unit =
         sendResponse(Some(body), status, message)
@@ -204,30 +255,12 @@ object Server {
           write(emptyResponse(status, message))
       }
 
-      def write(response: Response) = response match {
-        case Response (status, message, headers, content) =>
-          withResource (socket) { os =>
-            implicit val sink = new OutputStreamWriter (os)
-            writeStatusLine (status, message)
-            writeHeaders (headers)
-            writeLine ()
-            sink flush()
-
-            content foreach (_.writeContentTo (os))
-            os flush()
-          }
-      }      
-    }
-
-    class Request(val method: String,
-                  val path: String,
-                  val httpVersion: String,
-                  val headers: Map[String, String],
-                  val data: Source) {
-      override def toString =
-        method + "|" + path + "|" + httpVersion + "|" + headers + "|"
+      def write(response: Response) = withResource (socket) {
+        response(_)
+      }
     }
   }
 
-  def main(args: Array[String]) = HttpServer run
+  def main(args: Array[String]) = 
+    HttpServer(new InetSocketAddress(9090)) run
 }
