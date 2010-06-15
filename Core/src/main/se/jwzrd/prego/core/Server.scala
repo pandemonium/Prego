@@ -11,6 +11,7 @@ import java.io._
 import xml.NodeSeq
 import Iterator.continually
 import java.net._
+import collection.immutable.Map
 
 /**
  * Inheritance and partitioning in traits is fucked.
@@ -85,11 +86,9 @@ object Server {
     def writeLine(line: String = Empty)(implicit sink: Writer) =
       sink write(line + LineSeparator)
 
-    trait MessageBody {
+    trait MessageBody extends (OutputStream => Unit) {
       val contentType: String
       val contentLength: Int
-
-      def writeContentTo(sink: OutputStream): Unit
     }
 
     trait TextBody extends MessageBody {
@@ -97,7 +96,7 @@ object Server {
       val contentLength = content length
       val contentType = "text/plain"
 
-      def writeContentTo(sink: OutputStream) = {
+      def apply(sink: OutputStream) = {
         val writer = new OutputStreamWriter (sink)
         writer write (content)
         writer flush()
@@ -109,29 +108,36 @@ object Server {
       override val contentType = "text/xml"
     }
 
-    def responseWithContent[A <% MessageBody](status: Int, message: String)(body: A): Response = {
-      val headers = Map ("Content-Type" -> (body contentType),
-                         "Content-Length" -> (body contentLength).toString)
-
-      new Response (status, message, headers, Some(body))
-    }
-
-    def emptyResponse(status: Int = 200, message: String = "Ok") =
-      new Response (status, message, Map empty, None)
-
-    trait ResponseControl {
-      protected def statusReply(status: Int, message: String): Unit
-      protected def redirect(target: String): Unit
-    }
-
     trait Routing {
-      protected def route[A <% MessageBody](pattern: String)(handler: => A): Unit
+      def route[A <% MessageBody](pattern: String)(handler: => A): Unit
     }
 
-    class Response(status: Int,
-                   message: String,
-                   headers: Map[String, String],
-                   body: Option[MessageBody]) extends Http {
+    object StatusReply extends ((Int, String) => GenericResponse) {
+      def apply(status: Int, message: String) = 
+        new GenericResponse(status, message, Map empty, None)
+    }
+
+    object Redirect extends (String => GenericResponse) {
+      def apply(location: String) =
+        new GenericResponse(301, "Moved Permanently", Map("Location" -> location), None)
+    }
+
+    object Content {
+      def apply[A <% MessageBody](body: A,
+                                  headers: Map[String, String] = Map(),
+                                  status: Int = 200,
+                                  message: String = "Ok") =
+        new GenericResponse(status, message, headers ++ contentHeaders (body), Some(body))
+
+      def contentHeaders(body: MessageBody): Map[String, String] =
+        Map ("Content-Type" -> (body contentType),
+             "Content-Length" -> (body contentLength).toString)
+    }
+
+    class GenericResponse(status: Int,
+                          message: String,
+                          headers: Map[String, String],
+                          body: Option[MessageBody]) extends Http {
       def apply(outputStream: OutputStream): this.type = {
         implicit val sink = new OutputStreamWriter (outputStream)
         writeStatusLine (status, message)
@@ -139,7 +145,7 @@ object Server {
         writeLine ()
         sink flush ()
 
-        body foreach (_.writeContentTo (outputStream))
+        body foreach (_ (outputStream))
         outputStream flush ()
 
         this
@@ -186,6 +192,9 @@ object Server {
         limit.isEmpty    
   }
 
+  /**
+   * This thing is not good.
+   */
   trait ResourceUsage {
     type Streamed = {
       def getOutputStream(): OutputStream
@@ -202,65 +211,45 @@ object Server {
   }
 
   object HttpServer extends (SocketAddress => Control) {
-    def apply(address: SocketAddress) =
-      new HttpServer(address)
-  }
-
-  class HttpServer(val address: SocketAddress) extends Control with ResourceUsage with Http {
-    lazy val serverSocket = {
+    def apply(address: SocketAddress) = {
       val ss = new ServerSocket
       ss.bind(address)
 
-      ss
+      new HttpServer(ss)
     }
+  }
 
+  class HttpServer(val serverSocket: ServerSocket) extends Control with ResourceUsage with Http {
     implicit lazy val threaded = Dispatch.getInstance getAsyncExecutor(Priority NORMAL)
 
-    def run = continually (serverSocket accept) foreach { s =>
-      concurrently {
-        dispatch(Connection(s))
-      }
-    }
+    def run = for (c <- continually (Connection (serverSocket accept)))
+      concurrently (dispatch(c))
 
-    def stop =
-      serverSocket.close
+    def stop = serverSocket close
 
-    private def dispatch(connection: Connection) {
+    protected def dispatch(connection: Connection) {
       val request = connection readRequest
 
       println(request)
 
       if (request.path == "/foo")
-        connection sendResponse(404, "Not found you fat bastard")
+        connection send StatusReply(404, "Not found!")
       else
-        connection sendResponse(<h1>Hello, world</h1>)
+        connection send Content(<h1>Hello, world</h1>)
     }
 
     case class Connection(socket: Socket) extends ResourceUsage { Http =>
-      def readRequest =
-        parseRequest(socket getInputStream)
+      def readRequest = parseRequest(socket getInputStream)
 
-      def sendResponse[A <% MessageBody](body: A, status: Int = 200, message: String = "Ok"): Unit =
-        sendResponse(Some(body), status, message)
-
-      def sendResponse(status: Int, message: String): Unit =
-        sendResponse(None, status, message)
-
-      protected def sendResponse[A <% MessageBody](body: Option[A],
-                                                   status: Int,
-                                                   message: String) = body match {
-        case Some(x) =>
-          write(responseWithContent(status, message)(x))
-        case None =>
-          write(emptyResponse(status, message))
-      }
-
-      def write(response: Response) = withResource (socket) {
+      def send(response: GenericResponse): Unit = withResource (socket) {
         response(_)
       }
+
+      def send[A <% MessageBody](body: A): Unit =
+        send (Content(body))
     }
   }
 
-  def main(args: Array[String]) = 
+  def main(args: Array[String]) =
     HttpServer(new InetSocketAddress(9090)) run
 }
