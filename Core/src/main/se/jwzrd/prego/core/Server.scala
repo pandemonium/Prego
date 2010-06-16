@@ -12,6 +12,7 @@ import xml.NodeSeq
 import Iterator.continually
 import java.net._
 import collection.immutable.Map
+import util.DynamicVariable
 
 /**
  * Inheritance and partitioning in traits is fucked.
@@ -108,18 +109,97 @@ object Server {
       override val contentType = "text/xml"
     }
 
+    implicit def xmlCanBeGenericResponse(xml: NodeSeq): Response =
+      Content(xml)
+
     trait Routing {
-      def route[A <% MessageBody](pattern: String)(handler: => A): Unit
+      var routes: Map[String, () => Response] = Map()
+
+      // This method is going to have to take the designated HTTP method too
+      protected def add(pattern: String, method: HttpMethod)(handler: => Response): Unit =
+        routes += (pattern -> (() => handler))
+
+      import HttpMethod._
+
+      def get(pattern: String)(handler: => Response): Unit =
+        add(pattern, Get)(handler)
+
+      def head(pattern: String)(handler: => Response): Unit =
+        add(pattern, Head)(handler)
+
+      def put(pattern: String)(handler: => Response): Unit =
+        add(pattern, Put)(handler)
+
+      def post(pattern: String)(handler: => Response): Unit =
+        add(pattern, Post)(handler)
+
+      def option(pattern: String)(handler: => Response): Unit =
+        add(pattern, Option)(handler)
+
+      def delete(pattern: String)(handler: => Response): Unit =
+        add(pattern, Delete)(handler)
     }
 
-    object StatusReply extends ((Int, String) => GenericResponse) {
+    case class RequestContext(val request: Request)
+
+    trait Intrinsics {
+      val state = new DynamicVariable[Option[RequestContext]](None)
+
+      def request: Option[Request] =
+        state.value map (_.request)
+
+      def using[A](rc: RequestContext)(thunk: => A): A =
+        state.withValue (Some(rc))(thunk)
+    }
+
+    trait Application extends PartialFunction[Request, Response] with Routing with Intrinsics {
+      // This isn't entirely true!
+      def isDefinedAt(request: Request) =
+        routes.isDefinedAt(request path)
+
+      // This isn't entirely true!
+      def apply(request: Request) = using(RequestContext (request)) {
+        routes (request path)()
+      }
+    }
+
+    sealed trait HttpMethod {
+      val name: String
+
+      def is(name: String) =
+        this.name == name
+    }
+
+    object HttpMethod {
+      object Get extends Impl("GET")
+      object Head extends Impl("HEAD")
+      object Put extends Impl("PUT")
+      object Post extends Impl("POST")
+      object Option extends Impl("OPTION")
+      object Delete extends Impl("DELETE")
+
+      private val methods = List(Get, Head, Put, Post, Option, Delete)
+
+      abstract class Impl(val name: String) extends HttpMethod
+    }
+
+/*
+    GOAL(ish):
+    class ConcreteApplication extends Intrinsics with Routing {
+      get("/foo") {
+        <h1>Hello, foo</h1>
+      }
+    }
+*/
+
+    object StatusReply extends ((Int, String) => Response) {
       def apply(status: Int, message: String) = 
-        new GenericResponse(status, message, Map empty, None)
+        new Response(status, message, Map empty, None)
     }
 
-    object Redirect extends (String => GenericResponse) {
+    object Redirect extends (String => Response) {
       def apply(location: String) =
-        new GenericResponse(301, "Moved Permanently", Map("Location" -> location), None)
+        new Response(301, "Moved Permanently", Map("Location" -> location), None)
     }
 
     object Content {
@@ -127,14 +207,14 @@ object Server {
                                   headers: Map[String, String] = Map(),
                                   status: Int = 200,
                                   message: String = "Ok") =
-        new GenericResponse(status, message, headers ++ contentHeaders (body), Some(body))
+        new Response(status, message, headers ++ contentHeaders (body), Some(body))
 
       def contentHeaders(body: MessageBody): Map[String, String] =
         Map ("Content-Type" -> (body contentType),
              "Content-Length" -> (body contentLength).toString)
     }
 
-    class GenericResponse(status: Int,
+    class Response(status: Int,
                           message: String,
                           headers: Map[String, String],
                           body: Option[MessageBody]) extends Http {
@@ -235,13 +315,13 @@ object Server {
       if (request.path == "/foo")
         connection send StatusReply(404, "Not found!")
       else
-        connection send Content(<h1>Hello, world</h1>)
+        connection send <h1>Hello, world</h1>
     }
 
     case class Connection(socket: Socket) extends ResourceUsage { Http =>
       def readRequest = parseRequest(socket getInputStream)
 
-      def send(response: GenericResponse): Unit = withResource (socket) {
+      def send(response: Response): Unit = withResource (socket) {
         response(_)
       }
 
