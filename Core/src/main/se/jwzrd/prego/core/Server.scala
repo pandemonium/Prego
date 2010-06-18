@@ -86,162 +86,163 @@ object Server {
 
     def writeLine(line: String = Empty)(implicit sink: Writer) =
       sink write(line + LineSeparator)
+  }
 
-    trait MessageBody extends (OutputStream => Unit) {
-      val contentType: String
-      val contentLength: Int
+  implicit def xmlCanBeGenericResponse(xml: NodeSeq): Response =
+    Content(xml)
+
+  trait Routing {
+    var routes = Seq[Route]()
+
+    // Lvl 11 Scala Golf!
+    implicit val add: Route => Unit = routes :+= _
+  }
+
+  // To contain methods and vals for parameters too
+  case class RequestContext(val request: Request)
+
+  trait Intrinsics {
+    val state = new DynamicVariable[Option[RequestContext]](None)
+
+    def request: Option[Request] =
+      state.value map (_.request)
+
+    def using[A](rc: RequestContext)(thunk: => A): A =
+      state.withValue (Some(rc))(thunk)
+  }
+
+  trait Application extends PartialFunction[Request, Response] with Routing with Intrinsics {
+    // This does not take http method into consideration at the moment!
+    def isDefinedAt(request: Request) = {
+      routes exists (_.matching(request path))
     }
 
-    trait TextBody extends MessageBody {
-      protected val content: String
-      val contentLength = content length
-      val contentType = "text/plain"
+    // This does not take http method into consideration at the moment!
+    def apply(request: Request) = using (RequestContext (request)) {
+      println(request)
 
-      def apply(sink: OutputStream) = {
-        val writer = new OutputStreamWriter (sink)
-        writer write (content)
-        writer flush()
-      }
-    }
-
-    implicit def xmlCanBeMessageBody(xml: NodeSeq): MessageBody = new TextBody {
-      lazy val content = xml toString
-      override val contentType = "text/xml"
-    }
-
-    implicit def xmlCanBeGenericResponse(xml: NodeSeq): Response =
-      Content(xml)
-
-    trait Routing {
-      var routes: Map[String, () => Response] = Map()
-
-      // This method is going to have to take the designated HTTP method too
-      protected def add(pattern: String, method: HttpMethod)(handler: => Response): Unit =
-        routes += (pattern -> (() => handler))
-
-      import HttpMethod._
-
-      def get(pattern: String)(handler: => Response): Unit =
-        add(pattern, Get)(handler)
-
-      def head(pattern: String)(handler: => Response): Unit =
-        add(pattern, Head)(handler)
-
-      def put(pattern: String)(handler: => Response): Unit =
-        add(pattern, Put)(handler)
-
-      def post(pattern: String)(handler: => Response): Unit =
-        add(pattern, Post)(handler)
-
-      def option(pattern: String)(handler: => Response): Unit =
-        add(pattern, Option)(handler)
-
-      def delete(pattern: String)(handler: => Response): Unit =
-        add(pattern, Delete)(handler)
-    }
-
-    case class RequestContext(val request: Request)
-
-    trait Intrinsics {
-      val state = new DynamicVariable[Option[RequestContext]](None)
-
-      def request: Option[Request] =
-        state.value map (_.request)
-
-      def using[A](rc: RequestContext)(thunk: => A): A =
-        state.withValue (Some(rc))(thunk)
-    }
-
-    trait Application extends PartialFunction[Request, Response] with Routing with Intrinsics {
-      // This isn't entirely true!
-      def isDefinedAt(request: Request) =
-        routes.isDefinedAt(request path)
-
-      // This isn't entirely true!
-      def apply(request: Request) = using(RequestContext (request)) {
-        routes (request path)()
-      }
-    }
-
-    sealed trait HttpMethod {
-      val name: String
-
-      def is(name: String) =
-        this.name == name
-    }
-
-    object HttpMethod {
-      object Get extends Impl("GET")
-      object Head extends Impl("HEAD")
-      object Put extends Impl("PUT")
-      object Post extends Impl("POST")
-      object Option extends Impl("OPTION")
-      object Delete extends Impl("DELETE")
-
-      private val methods = List(Get, Head, Put, Post, Option, Delete)
-
-      abstract class Impl(val name: String) extends HttpMethod
-    }
-
-/*
-    GOAL(ish):
-    class ConcreteApplication extends Intrinsics with Routing {
-      get("/foo") {
-        <h1>Hello, foo</h1>
-      }
-    }
-*/
-
-    object StatusReply extends ((Int, String) => Response) {
-      def apply(status: Int, message: String) = 
-        new Response(status, message, Map empty, None)
-    }
-
-    object Redirect extends (String => Response) {
-      def apply(location: String) =
-        new Response(301, "Moved Permanently", Map("Location" -> location), None)
-    }
-
-    object Content {
-      def apply[A <% MessageBody](body: A,
-                                  headers: Map[String, String] = Map(),
-                                  status: Int = 200,
-                                  message: String = "Ok") =
-        new Response(status, message, headers ++ contentHeaders (body), Some(body))
-
-      def contentHeaders(body: MessageBody): Map[String, String] =
-        Map ("Content-Type" -> (body contentType),
-             "Content-Length" -> (body contentLength).toString)
-    }
-
-    class Response(status: Int,
-                          message: String,
-                          headers: Map[String, String],
-                          body: Option[MessageBody]) extends Http {
-      def apply(outputStream: OutputStream): this.type = {
-        implicit val sink = new OutputStreamWriter (outputStream)
-        writeStatusLine (status, message)
-        writeHeaders (headers)
-        writeLine ()
-        sink flush ()
-
-        body foreach (_ (outputStream))
-        outputStream flush ()
-
-        this
-      }
-    }
-
-    class Request(val method: String,
-                  val path: String,
-                  val httpVersion: String,
-                  val headers: Map[String, String],
-                  val data: Source) {
-      override def toString =
-        method + "|" + path + "|" + httpVersion + "|" + headers + "|"
+      (routes collect {
+        case Route(_, matching, handler) if matching(request path) => handler
+      } head)()
     }
   }
 
+  trait PathPredicate extends (String => Boolean) {
+    def parameters(subject: String): Map[String, String]
+  }
+
+  // path/to/handler/:id/:name
+  class PathParser(val pattern: String) extends PathPredicate {
+    def parameters(subject: String) = null
+
+    def apply(path: String) = true
+  }
+
+  case class Route(method: HttpMethod,
+                   matching: PathPredicate,
+                   handler: () => Response)
+
+  trait Origin {
+    def routeTo(handler: => Response): Route
+
+    def ==> (handler: => Response)(implicit add: Route => Unit): Unit =
+      add (routeTo (handler))
+  }
+
+  import HttpMethod._
+
+  implicit def httpMethodCanBeRouteSource(method: HttpMethod): RouteSource =
+    new RouteSource(method)
+
+  class RouteSource(val method: HttpMethod) {
+    def apply(pattern: String) = new Origin {
+      def routeTo(handler: => Response) =
+        Route(method, new PathParser(pattern), () => handler)
+    }
+  }
+
+  sealed trait HttpMethod
+
+  object HttpMethod {
+    object GET extends HttpMethod
+    object HEAD extends HttpMethod
+    object PUT extends HttpMethod
+    object POST extends HttpMethod
+    object OPTION extends HttpMethod
+    object DELETE extends HttpMethod
+  }
+
+  object StatusReply extends ((Int, String) => Response) {
+    def apply(status: Int, message: String) =
+      new Response(status, message, Map empty, None)
+  }
+
+  object Redirect extends (String => Response) {
+    def apply(location: String) =
+      new Response(301, "Moved Permanently", Map("Location" -> location), None)
+  }
+
+  object Content {
+    def apply[A <% MessageBody](body: A,
+                                headers: Map[String, String] = Map(),
+                                status: Int = 200,
+                                message: String = "Ok") =
+      new Response(status, message, headers ++ contentHeaders (body), Some(body))
+
+    def contentHeaders(body: MessageBody): Map[String, String] =
+      Map ("Content-Type" -> (body contentType),
+           "Content-Length" -> (body contentLength).toString)
+  }
+  
+  trait MessageBody extends (OutputStream => Unit) {
+    val contentType: String
+    val contentLength: Int
+  }
+
+  trait TextBody extends MessageBody {
+    protected val content: String
+    val contentLength = content length
+    val contentType = "text/plain"
+
+    def apply(sink: OutputStream) = {
+      val writer = new OutputStreamWriter (sink)
+      writer write (content)
+      writer flush()
+    }
+  }
+
+  implicit def xmlCanBeMessageBody(xml: NodeSeq): MessageBody = new TextBody {
+    lazy val content = xml toString
+    override val contentType = "text/xml"
+  }
+  
+  class Response(status: Int,
+                  message: String,
+                  headers: Map[String, String],
+                  body: Option[MessageBody]) extends Http {
+     def apply(outputStream: OutputStream): this.type = {
+       implicit val sink = new OutputStreamWriter (outputStream)
+       writeStatusLine (status, message)
+       writeHeaders (headers)
+       writeLine ()
+       sink flush ()
+
+       body foreach (_ (outputStream))
+       outputStream flush ()
+
+       this
+     }
+   }
+
+   class Request(val method: String,
+                 val path: String,
+                 val httpVersion: String,
+                 val headers: Map[String, String],
+                 val data: Source) {
+     override def toString =
+       method + "|" + path + "|" + httpVersion + "|" + headers + "|"
+   }
+ 
   trait Parsing {
     type ParseResult = String Either String
 
@@ -290,16 +291,17 @@ object Server {
     }
   }
 
-  object HttpServer extends (SocketAddress => Control) {
-    def apply(address: SocketAddress) = {
+  object HttpServer extends ((SocketAddress, (Request => Response)) => Control) {
+    def apply(address: SocketAddress, requestHandler: Request => Response) = {
       val ss = new ServerSocket
       ss.bind(address)
 
-      new HttpServer(ss)
+      new HttpServer(ss, requestHandler)
     }
   }
 
-  class HttpServer(val serverSocket: ServerSocket) extends Control with ResourceUsage with Http {
+  class HttpServer(val serverSocket: ServerSocket,
+                   val requestHandler: Request => Response) extends Control with ResourceUsage/* with Http*/ {
     implicit lazy val threaded = Dispatch.getInstance getAsyncExecutor(Priority NORMAL)
 
     def run = for (c <- continually (Connection (serverSocket accept)))
@@ -307,18 +309,10 @@ object Server {
 
     def stop = serverSocket close
 
-    protected def dispatch(connection: Connection) {
-      val request = connection readRequest
+    protected def dispatch(connection: Connection) =
+      connection.send(requestHandler(connection readRequest))
 
-      println(request)
-
-      if (request.path == "/foo")
-        connection send StatusReply(404, "Not found!")
-      else
-        connection send <h1>Hello, world</h1>
-    }
-
-    case class Connection(socket: Socket) extends ResourceUsage { Http =>
+    case class Connection(socket: Socket) extends ResourceUsage with Http {
       def readRequest = parseRequest(socket getInputStream)
 
       def send(response: Response): Unit = withResource (socket) {
@@ -330,6 +324,16 @@ object Server {
     }
   }
 
+  object Root extends Application {
+
+    // This thing should reduceLeft a Seq of PF:s returning a List of generated Responses;
+    // how to pick which of possibly more than one Response that is Most Usable?
+
+    GET("/") ==> {
+      <h1>Hello dear world!</h1>
+    }
+  }
+
   def main(args: Array[String]) =
-    HttpServer(new InetSocketAddress(9090)) run
+    HttpServer(new InetSocketAddress(9090), Root) run
 }
