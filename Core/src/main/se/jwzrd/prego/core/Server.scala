@@ -30,18 +30,20 @@ object Server {
 
     def stop: Unit
 
-    def repeatedly(body: => Unit) = eternally(body)
+    def repeatedly(body: => Unit) = {
+      @tailrec
+      def eternally(body: => Unit): Unit = {
+        body; eternally(body)
+      }
 
-    @tailrec
-    private def eternally(body: => Unit): Unit = {
-      body; eternally(body)
+      eternally(body)
     }
 
     def concurrently(body: => Unit)(implicit executor: Executor) =
       executor execute body
   }
 
-  trait Http extends Parsing {
+  trait Http { self: Parsing =>
     val LineSeparator = "\r\n"
     val HeaderNameValueSeparator = ": "
     val Empty = ""
@@ -104,8 +106,8 @@ object Server {
   trait Intrinsics {
     val state = new DynamicVariable[Option[RequestContext]](None)
 
-    def request: Option[Request] =
-      state.value map (_.request)
+    def request: Request =
+      state.value map (_ request) orNull
 
     def using[A](rc: RequestContext)(thunk: => A): A =
       state.withValue (Some(rc))(thunk)
@@ -187,7 +189,7 @@ object Server {
                                 headers: Map[String, String] = Map(),
                                 status: Int = 200,
                                 message: String = "Ok") =
-      new Response(status, message, headers ++ contentHeaders (body), Some(body))
+      new Response(status, message, contentHeaders (body) ++ headers, Some(body))
 
     def contentHeaders(body: MessageBody): Map[String, String] =
       Map ("Content-Type" -> (body contentType),
@@ -215,34 +217,7 @@ object Server {
     lazy val content = xml toString
     override val contentType = "text/xml"
   }
-  
-  class Response(status: Int,
-                  message: String,
-                  headers: Map[String, String],
-                  body: Option[MessageBody]) extends Http {
-     def apply(outputStream: OutputStream): this.type = {
-       implicit val sink = new OutputStreamWriter (outputStream)
-       writeStatusLine (status, message)
-       writeHeaders (headers)
-       writeLine ()
-       sink flush ()
 
-       body foreach (_ (outputStream))
-       outputStream flush ()
-
-       this
-     }
-   }
-
-   class Request(val method: String,
-                 val path: String,
-                 val httpVersion: String,
-                 val headers: Map[String, String],
-                 val data: Source) {
-     override def toString =
-       method + "|" + path + "|" + httpVersion + "|" + headers + "|"
-   }
- 
   trait Parsing {
     type ParseResult = String Either String
 
@@ -270,7 +245,34 @@ object Server {
         val tail = limit.tail
         limit.head == source.next && (tail.isEmpty || prefixMatches(source)(tail))
       } else
-        limit.isEmpty    
+        limit.isEmpty
+  }
+  
+  class Response(val status: Int,
+                 val message: String,
+                 val headers: Map[String, String],
+                 val body: Option[MessageBody]) extends Http with Parsing {
+    def apply(outputStream: OutputStream): this.type = {
+      implicit val sink = new OutputStreamWriter (outputStream)
+      writeStatusLine (status, message)
+      writeHeaders (headers)
+      writeLine ()
+      sink flush ()
+
+      body foreach (_ (outputStream))
+      outputStream flush ()
+
+      this
+    }
+  }
+
+  class Request(val method: String,
+                 val path: String,
+                 val httpVersion: String,
+                 val headers: Map[String, String],
+                 val data: Source) {
+     override def toString =
+       method + "|" + path + "|" + httpVersion + "|" + headers + "|"
   }
 
   /**
@@ -291,28 +293,29 @@ object Server {
     }
   }
 
-  object HttpServer extends ((SocketAddress, (Request => Response)) => Control) {
-    def apply(address: SocketAddress, requestHandler: Request => Response) = {
+  type RequestProcessor = Request => Response
+
+  object HttpServer {
+    def apply(address: SocketAddress, processor: RequestProcessor) = {
       val ss = new ServerSocket
       ss.bind(address)
 
-      new HttpServer(ss, requestHandler)
+      new HttpServer(ss, processor, Dispatch.getInstance getAsyncExecutor(Priority NORMAL))
     }
   }
 
   class HttpServer(val serverSocket: ServerSocket,
-                   val requestHandler: Request => Response) extends Control with ResourceUsage/* with Http*/ {
-    implicit lazy val threaded = Dispatch.getInstance getAsyncExecutor(Priority NORMAL)
-
+                   val processor: RequestProcessor,
+                   implicit val executor: Executor) extends Control {
     def run = for (c <- continually (Connection (serverSocket accept)))
       concurrently (dispatch(c))
 
     def stop = serverSocket close
 
     protected def dispatch(connection: Connection) =
-      connection.send(requestHandler(connection readRequest))
+      connection.send (processor (connection readRequest))
 
-    case class Connection(socket: Socket) extends ResourceUsage with Http {
+    case class Connection(socket: Socket) extends ResourceUsage with Http with Parsing {
       def readRequest = parseRequest(socket getInputStream)
 
       def send(response: Response): Unit = withResource (socket) {
@@ -320,20 +323,64 @@ object Server {
       }
 
       def send[A <% MessageBody](body: A): Unit =
-        send (Content(body))
+        send (Content (body))
+    }
+  }
+
+  trait Composition extends Application {
+    def applications: Seq[Application]
+
+    lazy private val lifted =
+      applications map (_ lift)
+
+    protected def applied(request: Request) =
+      lifted flatMap (_ (request))
+
+    override def isDefinedAt(request: Request) =
+      !(applied (request) isEmpty)
+
+    override def apply(request: Request) = applied (request) match {
+      // What to do with more than one response?
+      //   Pick the first? Last?
+      case x :: Nil => x
+      case xs => selectOne(xs)
+    }
+
+    def selectOne(chain: Seq[Response]): Response = {
+      def byStatus(s: Int) =
+        chain find (_.status == s)
+
+      byStatus (200) getOrElse {
+        byStatus (500) getOrElse chain.head
+      }
+    }
+  }
+
+  object Index extends Application {
+    GET("/") ==>
+      Content(<html>
+        <head>
+          <title>Hello, world</title>
+        </head>
+        <body>
+          <h1>Hello world</h1>
+          <p>Path: {request.path}</p>
+          <p>Version: {request.httpVersion}</p>
+          <p>Headers: {request.headers}</p>
+        </body>
+      </html>, Map("Content-Type" -> "text/html"))
+  }
+
+  object Module {
+    def apply(xs: Application*) = new Composition {
+      val applications = xs
     }
   }
 
   object Root extends Application {
-
-    // This thing should reduceLeft a Seq of PF:s returning a List of generated Responses;
-    // how to pick which of possibly more than one Response that is Most Usable?
-
-    GET("/") ==> {
-      <h1>Hello dear world!</h1>
-    }
+    GET("/f") ==> StatusReply(404, "Nothing found")
   }
 
   def main(args: Array[String]) =
-    HttpServer(new InetSocketAddress(9090), Root) run
+    HttpServer(new InetSocketAddress(9090), Module(Root, Index)) run
 }
