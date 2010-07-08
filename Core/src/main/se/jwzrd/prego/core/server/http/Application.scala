@@ -13,14 +13,19 @@ object Application {
 
   case class RequestContext(val request: Request, val invocation: Invocation)
 
-  trait Intrinsics {
+  trait IntrinsicValues {
+    def request: Request
+    def parameters: Map[String, String]
+  }
+
+  trait Intrinsics extends IntrinsicValues {
     val state = new DynamicVariable[Option[RequestContext]] (None)
 
     def request: Request =
       state.value map (_ request) orNull
 
-    def parameters(defaultValues: Map[String, String] = Map ()): Map[String, String] =
-      state.value map (_.invocation.parameters(defaultValues)) orNull      
+    implicit def parameters: Map[String, String] =
+      state.value map (_.invocation.parameters()) orNull
 
     def using[A](rc: RequestContext)(thunk: => A): A =
       state.withValue (Some (rc)) (thunk)
@@ -93,6 +98,8 @@ object Application {
   }
 
   trait Application extends PartialFunction[Request, Response] with Routing with Intrinsics {
+    protected implicit val intrinsicValues: IntrinsicValues = this
+
     // This does not take http method into consideration at the moment!
     def isDefinedAt(request: Request) = routes exists { r =>
         r.pathPredicate evaluate (request path) isDefined

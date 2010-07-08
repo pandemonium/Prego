@@ -9,6 +9,7 @@ import java.net.InetSocketAddress
  * @author Patrik Andersson <pandersson@gmail.com>
  */
 object Tests {
+  import server.http._
   import server.http.Application._
   import HttpMethod._
 
@@ -21,12 +22,13 @@ object Tests {
         <body>
           <h1>Shop shite here!</h1>
           <p>{request.path}</p>
-          <p><a href="/foo/1">Foo 1</a></p>
-          <p><a href="/foo/2">Foo 2</a></p>
+          <p><a href="/foo/1/hello">Foo 1</a></p>
+          <p><a href="/foo/2/world">Foo 2</a></p>
+          <p><a href="/foo//world">Foo (empty)</a></p>
         </body>
       </html>
 
-    GET ("/foo/:bar") ==>
+    GET ("/foo/[:bar]/:baz") ==>
       <html>
         <head>
           <title>Shopping cart</title>
@@ -34,31 +36,12 @@ object Tests {
         <body>
           <h1>This is the foo section!</h1>
           <p>{request.path}</p>
-          <p>bar: {parameters().get("bar")}</p>
+          <p>bar: {'bar <=> "7"}</p>
+          <p>baz: {'baz <=}</p>
         </body>
       </html>
   }
 
-  def main(args: Array[String]): Unit = {
+  def main(args: Array[String]) =
     HttpServer (new InetSocketAddress(8181), Module(ShoppingCart, NotFound)).run
-/*
-    val e = Expression ("/foo/:bar")
-    println(e.evaluate("/foo/1"))
-*/
-
-    trait Foo extends PartialFunction[Int, String] {
-      def isDefinedAt(i: Int) = {
-        println("isDefinedAt!")
-
-        2 == i
-      }
-
-      def apply(i: Int): String = "2"
-    }
-
-    val p: Foo = new Foo {}
-    val f = p.lift
-
-    println(f(1))
-  }
 }

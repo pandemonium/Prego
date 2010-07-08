@@ -76,14 +76,23 @@ class Expression(val expression: Seq[Part]) {
 }
 
 object Evaluator {
-  private def evaluateInput(expression: Seq[Part], input: Seq[String]): Boolean =
-    if (input.length == expression.length)
-      expression zip input map {
+  private def evaluateInput(expression: Seq[Part], input: Seq[String]): Boolean = {
+/*
+    println("input.length: " + input.length + "; expression.length: " + expression.length)
+    println("input: " + input)
+    println("expression: " + expression)
+    println()
+
+*/
+    // This section is going to need a once-over at some point; it feels... fragile.
+    if (input.length <= expression.length)
+      expression zipAll (input, OptionalParameter(""), "")  map {
         case (p: PathPart, b) => p.name == b
         case (p: ParameterPart, b) if !p.optional => !b.isEmpty
         case (p: ParameterPart, b) if p.optional => true
       } forall (true ==)
     else false
+  }
 
   def apply(expression: Seq[Part], input: String) = {
     val parts = input split "/"
@@ -100,7 +109,7 @@ class Invocation(val expression: Seq[Part],
                  val input: Seq[String]) {
   lazy val parsedParameters: Map[String, String] = Map () ++ parseParameters
 
-  protected def parseParameters = expression zip input collect {
+  protected def parseParameters = expression zipAll(input, OptionalParameter(""), "") collect {
     case (p: ParameterPart, b) if !b.isEmpty => (p.name, b)
   }
 
