@@ -40,6 +40,34 @@ object Tests {
           <p>baz: {'baz <=}</p>
         </body>
       </html>
+
+    GET ("/bar") ==>
+      <html>
+        <head>
+          <title>Shopping cart</title>
+        </head>
+        <body>
+          <h1>This is the foo section!</h1>
+          <form action="/bar-action" method="POST">
+            <input type="text" name="foo" />
+            <input type="submit" value="save" />
+          </form>
+        </body>
+      </html>
+
+    // This does not work. It appears not to send anything.
+    POST ("/bar-action") ==>
+      <html>
+        <head>
+          <title>Shopping cart</title>
+        </head>
+        <body>
+          <h1>This is the foo section!</h1>
+          <p>{request.path}</p>
+          <p>{request.headers}</p>
+          <p>{parameters}</p>
+        </body>
+      </html>
   }
 
   def main(args: Array[String]) =

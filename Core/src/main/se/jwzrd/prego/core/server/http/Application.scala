@@ -52,9 +52,9 @@ object Application {
     new RouteSource (method)
 
   class RouteSource(val method: HttpMethod) {
-    def apply(pattern: String) = new Origin {
+    def apply(expressionSource: String) = new Origin {
       def routeTo(handler: => Response) =
-        Route (method, Expression (pattern), () => handler)
+        Route (method, Expression (expressionSource), () => handler)
     }
   }
 
@@ -97,6 +97,13 @@ object Application {
         byStatus (500) getOrElse chain.head
       }
     }
+  }
+
+  trait WwwFormHandling {
+    // check Content-Type header to know to engage
+    // read Content-Length to know exactly how much to read
+    // read and parse
+    // put read data into invocation.parameters
   }
 
   trait Application extends PartialFunction[Request, Response] with Routing with Intrinsics {
