@@ -38,8 +38,8 @@ object Application {
   }
 
   case class Route(method: HttpMethod,
-                   pathPredicate: Expression,
-                   handler: () => Response)
+                   rule: Expression,
+                   action: () => Response)
 
   trait Origin {
     def routeTo(handler: => Response): Route
@@ -58,15 +58,17 @@ object Application {
     }
   }
 
-  sealed trait HttpMethod
+  sealed abstract class HttpMethod (val name: String) {
+    def is(name: String) = this.name == name
+  }
 
   object HttpMethod {
-    object GET extends HttpMethod
-    object HEAD extends HttpMethod
-    object PUT extends HttpMethod
-    object POST extends HttpMethod
-    object OPTION extends HttpMethod
-    object DELETE extends HttpMethod
+    object GET extends HttpMethod ("GET")
+    object HEAD extends HttpMethod ("HEAD")
+    object PUT extends HttpMethod ("PUT")
+    object POST extends HttpMethod ("POST")
+    object OPTION extends HttpMethod ("OPTION")
+    object DELETE extends HttpMethod ("DELETE")
   }
 
   trait Composition extends Application {
@@ -100,13 +102,13 @@ object Application {
   trait Application extends PartialFunction[Request, Response] with Routing with Intrinsics {
     protected implicit val intrinsicValues: IntrinsicValues = this
 
-    // This does not take http method into consideration at the moment!
-    def isDefinedAt(request: Request) = routes exists { r =>
-        r.pathPredicate evaluate (request path) isDefined
+    def isDefinedAt(request: Request) = routes exists {
+      case Route(method, rule, _) if (method is request.method) && (rule (request) isDefined) => true
+      case _ => false
     }
 
-    protected def findRoutes(request: Request): Seq[(Route, Invocation)] = routes collect {
-      case r @ Route (_, matching, handler) => (r, matching evaluate(request path))       
+    private def routesFor(request: Request) = routes collect {
+      case route @ Route (method, rule, _) if method is request.method => (route, rule (request))
     } collect {
       case (r, Some(i)) => (r, i)
     }
@@ -114,10 +116,8 @@ object Application {
     // This does not take http method into consideration at the moment!
     // this blows up if findRoutes returns Nil. That implies that isDefinedAt
     // returned a false positive otoh
-    def apply(request: Request) = findRoutes (request) match {
-      case (route, invocation) :: xs => using (RequestContext (request, invocation)) {
-        route.handler()
-      }
+    def apply(request: Request) = routesFor (request) match {
+      case (route, invocation) :: xs => using (RequestContext (request, invocation)) (route action())
     }
   }
 

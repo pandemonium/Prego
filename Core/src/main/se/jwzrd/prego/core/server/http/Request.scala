@@ -67,9 +67,11 @@ object Expression {
   def apply(text: String) = new Expression (parse (text))
 }
 
-// -> Expression instead? Expression can have an evaluate: Result
 class Expression(val expression: Seq[Part]) {
-  def evaluate(input: String): Option[Invocation] =
+  def apply(request: Request): Option[Invocation] =
+    this (request path)
+
+  def apply(input: String): Option[Invocation] = 
     Evaluator (expression, input)
 
   override def toString = expression mkString "\\"
