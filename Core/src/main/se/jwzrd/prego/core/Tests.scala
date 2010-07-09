@@ -1,9 +1,7 @@
 package se.jwzrd.prego.core
 
 import java.lang.String
-import server.http.{HttpServer, Expression}
-import util.matching.Regex
-import java.net.InetSocketAddress
+import java.net.{InetSocketAddress}
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
@@ -48,7 +46,7 @@ object Tests {
         </head>
         <body>
           <h1>This is the foo section!</h1>
-          <form action="/bar-action" method="POST">
+          <form enctype="utf-8" action="/bar-action" method="POST">
             <input type="text" name="foo" />
             <input type="submit" value="save" />
           </form>
@@ -65,11 +63,12 @@ object Tests {
           <h1>This is the foo section!</h1>
           <p>{request.path}</p>
           <p>{request.headers}</p>
-          <p>{parameters}</p>
+          <p>{'foo <=}</p>
         </body>
       </html>
   }
 
-  def main(args: Array[String]) =
+  def main(args: Array[String]) = {
     HttpServer (new InetSocketAddress(8181), Module(ShoppingCart, NotFound)).run
+  }
 }

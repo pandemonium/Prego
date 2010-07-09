@@ -1,16 +1,19 @@
 package se.jwzrd.prego.core.server.http
 
 import util.DynamicVariable
+import java.lang.String
+import collection.immutable.Map
+import java.net.URLDecoder
 
 object Application {
-  import HttpMethod._
-
   object Module {
     def apply(xs: Application*) = new Composition {
       val applications = xs
     }
   }
 
+  // I would like to be able to add state to this (or Invocation) so that I can chain
+  // "request handler":s via mixin that add information. EncodingAware for instance.
   case class RequestContext(val request: Request, val invocation: Invocation)
 
   trait IntrinsicValues {
@@ -99,15 +102,50 @@ object Application {
     }
   }
 
-  trait WwwFormHandling {
+  trait WwwFormHandling extends ApplicationLike {
     // check Content-Type header to know to engage
     // read Content-Length to know exactly how much to read
     // read and parse
     // put read data into invocation.parameters
+    override def execute(route: Route,
+                         request: Request,
+                         invocation: Invocation): Response = {
+      request.headers get("Content-Type") match {
+        case Some("application/x-www-form-urlencoded") =>
+          handleWwwFormUrlEncoded(route, request, invocation)
+        case _ =>
+          super.execute(route, request, invocation)
+      }
+    }
+
+    def handleWwwFormUrlEncoded(route: Route,
+                                request: Request,
+                                invocation: Invocation): Response = {
+      val contentLength = request headers ("Content-Length") toInt
+      val body = (request data) take (contentLength)
+
+      super.execute (route,
+                     request,
+                     invocation copy (defaultParameters = parseParameters (body)))
+    }
+
+    def parseParameters(body: Iterator[Char]) =
+      Map() ++ parsePostBody (body)
+
+    import URLDecoder.decode
+    def parsePostBody(body: Iterator[Char]) = parameterPairs (body) map parseParameter map {
+      case Array(k, v) => (decode(k) -> decode(v))
+    }
+
+    def parameterPairs(body: Iterator[Char]) =
+      (body mkString) split "&"
+
+    def parseParameter(pair: String) =
+      pair split "="
   }
 
-  trait Application extends PartialFunction[Request, Response] with Routing with Intrinsics {
-    protected implicit val intrinsicValues: IntrinsicValues = this
+  trait ApplicationLike extends PartialFunction[Request, Response] with Routing with Intrinsics {
+    implicit val intrinsicValues: IntrinsicValues = this
 
     def isDefinedAt(request: Request) = routes exists {
       case Route(method, rule, _) if (method is request.method) && (rule (request) isDefined) => true
@@ -120,13 +158,18 @@ object Application {
       case (r, Some(i)) => (r, i)
     }
 
+    def execute(route: Route, request: Request, invocation: Invocation): Response =
+      using (RequestContext (request, invocation)) (route action())
+
     // This does not take http method into consideration at the moment!
     // this blows up if findRoutes returns Nil. That implies that isDefinedAt
     // returned a false positive otoh
     def apply(request: Request) = routesFor (request) match {
-      case (route, invocation) :: xs => using (RequestContext (request, invocation)) (route action())
+      case (route, invocation) :: xs => execute (route, request, invocation)
     }
   }
+
+  trait Application extends ApplicationLike with WwwFormHandling
 
   object NotFound extends Application {
     override def isDefinedAt(request: Request) = true
