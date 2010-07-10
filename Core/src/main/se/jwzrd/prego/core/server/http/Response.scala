@@ -54,12 +54,12 @@ object Content {
 
 trait MessageBody extends (OutputStream => Unit) {
   val contentType: String
-  val contentLength: Int
+  val contentLength: Long
 }
 
 trait TextBody extends MessageBody {
   protected val content: String
-  val contentLength = content length
+  val contentLength = (content length) toLong
   val contentType = "text/plain"
 
   def apply(sink: OutputStream) = {

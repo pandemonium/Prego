@@ -1,9 +1,8 @@
 package se.jwzrd.prego.core.server.http
 
-import com.apple.concurrent.Dispatch
-import com.apple.concurrent.Dispatch.Priority
+/*import com.apple.concurrent.Dispatch
+import com.apple.concurrent.Dispatch.Priority*/
 import java.lang.String
-import java.util.concurrent.Executor
 import Iterator.continually
 import java.net._
 import collection.immutable.Map
@@ -12,6 +11,7 @@ import Application._
 import HttpMethod._
 import Response._
 import se.jwzrd.prego.core.server.{Parsing, ResourceUsage, Control}
+import java.util.concurrent.{Executors, Executor}
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
@@ -22,7 +22,8 @@ object HttpServer {
     val ss = new ServerSocket
     ss.bind (address)
 
-    new HttpServer (ss, processor, Dispatch.getInstance getAsyncExecutor (Priority NORMAL))
+//    new HttpServer (ss, processor, Dispatch.getInstance getAsyncExecutor (Priority NORMAL))
+    new HttpServer (ss, processor, Executors newCachedThreadPool)
   }
 
   class HttpServer(val serverSocket: ServerSocket,

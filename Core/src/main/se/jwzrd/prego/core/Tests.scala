@@ -69,6 +69,12 @@ object Tests {
   }
 
   def main(args: Array[String]) = {
-    HttpServer (new InetSocketAddress(8181), Module(ShoppingCart, NotFound)).run
+    val mappings = Map(
+      "/prego" -> """C:\Users\Maria\IdeaProjects\Prego\exportToHTML\se\jwzrd\prego\core\server""",
+      "/skp" -> """C:\Users\Maria\Documents\patrik\test"""
+    )
+    val fileServer = FileServer("/fileserve", mappings)
+    val composition = Module(fileServer, ShoppingCart, NotFound)
+    HttpServer (new InetSocketAddress(8181), composition).run
   }
 }
