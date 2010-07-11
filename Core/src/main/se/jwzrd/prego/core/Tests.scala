@@ -2,6 +2,7 @@ package se.jwzrd.prego.core
 
 import java.lang.String
 import java.net.{InetSocketAddress}
+import java.util.Date
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
@@ -9,6 +10,7 @@ import java.net.{InetSocketAddress}
 object Tests {
   import server.http._
   import server.http.Application._
+  import server.http.Response._
   import HttpMethod._
 
   object ShoppingCart extends Application {
@@ -26,18 +28,48 @@ object Tests {
         </body>
       </html>
 
-    GET ("/foo/[:bar]/:baz") ==>
+    GET ("/foo/[:bar]/:baz") ==> {
       <html>
         <head>
           <title>Shopping cart</title>
         </head>
         <body>
           <h1>This is the foo section!</h1>
+          <p>
+            {request.path}
+          </p>
+          <p>bar:
+            {'bar <=> "7"}
+          </p>
+          <p>baz:
+            {'baz <=}
+          </p>
+        </body>
+      </html> set Cookie("1", "2", new Date())
+    }
+
+    def view =
+      <html>
+        <head>
+          <title>Shopping cart</title>
+        </head>
+        <body>
+          <h1>Shop shite here!</h1>
           <p>{request.path}</p>
-          <p>bar: {'bar <=> "7"}</p>
-          <p>baz: {'baz <=}</p>
+          <p>Cookies: {cookies.mkString(",")}</p>
+          <p>Headers: <ul>{request.headers map { case (k, v) => <li>{k} = {v}</li>  }}</ul></p>
+          <form action="/set-cookie" method="POST">
+            <input type="text" name="cookieName" />
+            <input type="submit" value="save" />
+          </form>
         </body>
       </html>
+
+    GET ("/cookies") ==> view
+
+    POST ("/set-cookie") ==> {
+      view set Cookie('cookieName <=, "hello", new Date(System.currentTimeMillis + 2000000))
+    }
 
     GET ("/bar") ==>
       <html>
@@ -46,7 +78,7 @@ object Tests {
         </head>
         <body>
           <h1>This is the foo section!</h1>
-          <form enctype="utf-8" action="/bar-action" method="POST">
+          <form action="/bar-action" method="POST">
             <input type="text" name="foo" />
             <input type="submit" value="save" />
           </form>

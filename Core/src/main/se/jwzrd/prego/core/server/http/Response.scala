@@ -7,27 +7,44 @@ import xml.NodeSeq
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
  */
-class Response(val status: Int,
-               val message: String,
-               val headers: Map[String, String],
-               val body: Option[MessageBody]) extends Http with Parsing {
+
+// change to support multiple headers with the same name
+case class Response(val status: Int,
+                    val message: String,
+                    val headers: Map[String, String],
+                    val body: Option[MessageBody]) extends Http with Parsing {
   def apply(outputStream: OutputStream): this.type = {
-    implicit val sink = new OutputStreamWriter (outputStream)
-    writeStatusLine (status, message)
-    writeHeaders (headers)
-    writeLine ()
+    implicit val sink = new OutputStreamWriter(outputStream)
+    writeStatusLine(status, message)
+    writeHeaders(headers)
+    writeLine()
     sink flush ()
 
-    body foreach (_ (outputStream))
+    body foreach (_(outputStream))
     outputStream flush ()
 
     this
   }
+
+  override def toString =
+    "status: " + status +
+    "; message: " + message +
+    "; headers: " + headers
 }
 
+class CookieDecoration[A <% Response] (val response: A) {
+  // todo: change to Cookie*
+  // must first change Response to support multiple headers with the same name
+  def set(cookie: Cookie) =
+    response copy (headers = response.headers + ("Set-Cookie" -> (cookie textRendering)))
+}
+
+// move these to the http package object
 object Response {
   implicit def xmlCanBeGenericResponse(xml: NodeSeq): Response = Content (xml)
   implicit def xmlCanBeMessageBody(xml: NodeSeq): MessageBody = new XmlBody(xml)
+  implicit def responseLikeCanHaveCookies[A <% Response](response: A): CookieDecoration[A] =
+    new CookieDecoration (response)
 }
 
 object StatusReply extends ((Int, String) => Response) {
@@ -51,6 +68,8 @@ object Content {
     Map ("Content-Type" -> (body contentType),
          "Content-Length" -> (body contentLength).toString)
 }
+
+
 
 trait MessageBody extends (OutputStream => Unit) {
   val contentType: String

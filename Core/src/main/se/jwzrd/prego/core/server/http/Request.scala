@@ -106,9 +106,10 @@ object Evaluator {
   }
 }
 
-// Ideally, this thing would contain the Request aswell
+// Ideally, this thing would contain the Request as well
 case class Invocation(val expression: Seq[Part],
                       val input: Seq[String],
+                      val cookies: Seq[Cookie] = Seq(),
                       val defaultParameters: Map[String, String] = Map()) {
   lazy val parsedParameters: Map[String, String] = defaultParameters ++ parseParameters
 

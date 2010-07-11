@@ -2,7 +2,7 @@ package se.jwzrd.prego.core.server.http
 
 import se.jwzrd.prego.core.server.http.Application.Application
 import java.io.{FileInputStream, OutputStream, File}
-import java.nio.channels.{Channels, FileChannel}
+import java.nio.channels.{Channels}
 import javax.activation.MimetypesFileTypeMap
 
 /**
@@ -23,17 +23,9 @@ class FileServer (val root: String,
   //
   // As a safety measure - the served file must be a child to the fsPath
   // backing the requested virtual directory
-  override def isDefinedAt(request: Request): Boolean = {
-    val path = request path
-
-    if (path startsWith root) {
-      lookup (path) match {
-        case Some(file) if file.isFile => true
-        case _ => false
-      }
-    } else
-      false
-  }
+  override def isDefinedAt(request: Request) =
+    ((request path) startsWith root) &&
+    (lookup(request path) map (_ isFile) getOrElse false)
 
   /**
    * Lookup the File behind a virtual path

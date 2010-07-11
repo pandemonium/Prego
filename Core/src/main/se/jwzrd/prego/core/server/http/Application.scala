@@ -4,6 +4,11 @@ import util.DynamicVariable
 import java.lang.String
 import collection.immutable.Map
 import java.net.URLDecoder
+import java.util.Date
+
+/**
+ * @author Patrik Andersson <pandersson@gmail.com>
+ */
 
 object Application {
   object Module {
@@ -22,16 +27,22 @@ object Application {
   }
 
   trait Intrinsics extends IntrinsicValues {
-    val state = new DynamicVariable[Option[RequestContext]] (None)
+    val state = new DynamicVariable[RequestContext] (null)
 
-    def request: Request =
-      state.value map (_ request) orNull
 
     implicit def parameters: Map[String, String] =
-      state.value map (_.invocation.parameters()) orNull
+      context.invocation parameters()
+
+    def request: Request = context request
+
+    def cookies = context.invocation cookies
+
+    def cookie(name: String) = cookies find (_.name == name)
+
+    def context = state value
 
     def using[A](rc: RequestContext)(thunk: => A): A =
-      state.withValue (Some (rc)) (thunk)
+      state.withValue (rc) (thunk)
   }
 
   trait Routing {
@@ -102,49 +113,14 @@ object Application {
     }
   }
 
-  trait WwwFormHandling extends ApplicationLike {
-    // check Content-Type header to know to engage
-    // read Content-Length to know exactly how much to read
-    // read and parse
-    // put read data into invocation.parameters
-    override def execute(route: Route,
-                         request: Request,
-                         invocation: Invocation): Response = {
-      request.headers get("Content-Type") match {
-        case Some("application/x-www-form-urlencoded") =>
-          handleWwwFormUrlEncoded(route, request, invocation)
-        case _ =>
-          super.execute(route, request, invocation)
-      }
-    }
-
-    def handleWwwFormUrlEncoded(route: Route,
-                                request: Request,
-                                invocation: Invocation): Response = {
-      val contentLength = request headers ("Content-Length") toInt
-      val body = (request data) take (contentLength)
-
-      super.execute (route,
-                     request,
-                     invocation copy (defaultParameters = parseParameters (body)))
-    }
-
-    def parseParameters(body: Iterator[Char]) =
-      Map() ++ parsePostBody (body)
-
-    import URLDecoder.decode
-    def parsePostBody(body: Iterator[Char]) = parameterPairs (body) map parseParameter map {
-      case Array(k, v) => (decode(k) -> decode(v))
-    }
-
-    def parameterPairs(body: Iterator[Char]) =
-      (body mkString) split "&"
-
-    def parseParameter(pair: String) =
-      pair split "="
+  trait ExecuteApplication {
+    def execute(route: Route, request: Request, invocation: Invocation): Response    
   }
 
-  trait ApplicationLike extends PartialFunction[Request, Response] with Routing with Intrinsics {
+  trait ApplicationLike extends PartialFunction[Request, Response]
+          with Routing
+          with Intrinsics
+          with ExecuteApplication {
     implicit val intrinsicValues: IntrinsicValues = this
 
     def isDefinedAt(request: Request) = routes exists {
@@ -169,7 +145,10 @@ object Application {
     }
   }
 
-  trait Application extends ApplicationLike with WwwFormHandling
+  trait Application
+          extends ApplicationLike 
+          with WwwFormHandling
+          with CookieHandling
 
   object NotFound extends Application {
     override def isDefinedAt(request: Request) = true
