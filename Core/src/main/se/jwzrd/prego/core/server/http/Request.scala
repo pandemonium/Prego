@@ -107,11 +107,14 @@ object Evaluator {
 }
 
 // Ideally, this thing would contain the Request as well
-case class Invocation(val expression: Seq[Part],
-                      val input: Seq[String],
-                      val cookies: Seq[Cookie] = Seq(),
-                      val defaultParameters: Map[String, String] = Map()) {
-  lazy val parsedParameters: Map[String, String] = defaultParameters ++ parseParameters
+// Why is the parameter parsing in here? I mean really?
+case class Invocation(expression: Seq[Part],
+                      input: Seq[String],
+                      cookies: Seq[Cookie] = Seq(),
+                      session: Option[Session] = None,
+                      defaultParameters: Map[String, String] = Map()) {
+  lazy val parsedParameters/*: Map[String, String]*/ =
+    defaultParameters ++ parseParameters
 
   protected def parseParameters = expression zipAll(input, OptionalParameter(""), "") collect {
     case (p: ParameterPart, b) if !b.isEmpty => (p.name, b)

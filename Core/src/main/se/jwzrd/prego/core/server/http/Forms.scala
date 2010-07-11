@@ -1,12 +1,12 @@
 package se.jwzrd.prego.core.server.http
 
-import se.jwzrd.prego.core.server.http.Application.{Route, ExecuteApplication}
+import se.jwzrd.prego.core.server.http.Application.{Route, ApplicationExecution}
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
  */
 
-trait WwwFormHandling extends ExecuteApplication { ApplicationLike =>
+trait WwwFormHandling extends ApplicationExecution { ApplicationLike =>
   // check Content-Type header to know to engage
   // read Content-Length to know exactly how much to read
   // read and parse

@@ -113,14 +113,14 @@ object Application {
     }
   }
 
-  trait ExecuteApplication {
+  trait ApplicationExecution {
     def execute(route: Route, request: Request, invocation: Invocation): Response    
   }
 
   trait ApplicationLike extends PartialFunction[Request, Response]
           with Routing
           with Intrinsics
-          with ExecuteApplication {
+          with ApplicationExecution {
     implicit val intrinsicValues: IntrinsicValues = this
 
     def isDefinedAt(request: Request) = routes exists {
@@ -145,10 +145,13 @@ object Application {
     }
   }
 
+  // Ideally, the intrinsics could also be mixed-in (the using() call) as an IntrinsicsHandler
+
   trait Application
           extends ApplicationLike 
           with WwwFormHandling
           with CookieHandling
+//          with SessionHandling -- Not completed!
 
   object NotFound extends Application {
     override def isDefinedAt(request: Request) = true

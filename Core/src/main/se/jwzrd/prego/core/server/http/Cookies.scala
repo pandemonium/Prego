@@ -1,7 +1,7 @@
 package se.jwzrd.prego.core.server.http
 
 import java.util.Date
-import se.jwzrd.prego.core.server.http.Application.{Route, ExecuteApplication}
+import se.jwzrd.prego.core.server.http.Application.{Route, ApplicationExecution}
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
@@ -28,7 +28,7 @@ class Cookie (val name: String, val value: String, val expires: Date = null) {
     "; path=/; domain="
 }
 
-trait CookieHandling extends ExecuteApplication { ApplicationLike =>
+trait CookieHandling extends ApplicationExecution { ApplicationLike =>
   override abstract def execute(route: Route,
                                 request: Request,
                                 invocation: Invocation): Response = {
