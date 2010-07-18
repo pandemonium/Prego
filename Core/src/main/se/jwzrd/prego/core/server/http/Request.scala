@@ -71,7 +71,7 @@ class Expression(val expression: Seq[Part]) {
   def apply(request: Request): Option[Invocation] =
     this (request path)
 
-  def apply(input: String): Option[Invocation] = 
+  def apply(input: String): Option[Invocation] =
     Evaluator (expression, input)
 
   override def toString = expression mkString "\\"
@@ -100,7 +100,7 @@ object Evaluator {
     val parts = input split "/"
 
     if (evaluateInput (expression, parts))
-      Some (new Invocation (expression, parts))
+      Some (Invocation (expression, parts, Seq(), None, Map()))
     else
       None
   }
@@ -110,9 +110,9 @@ object Evaluator {
 // Why is the parameter parsing in here? I mean really?
 case class Invocation(expression: Seq[Part],
                       input: Seq[String],
-                      cookies: Seq[Cookie] = Seq(),
-                      session: Option[Session] = None,
-                      defaultParameters: Map[String, String] = Map()) {
+                      cookies: Seq[Cookie],
+                      session: Option[Session],
+                      defaultParameters: Map[String, String]) {
   lazy val parsedParameters/*: Map[String, String]*/ =
     defaultParameters ++ parseParameters
 

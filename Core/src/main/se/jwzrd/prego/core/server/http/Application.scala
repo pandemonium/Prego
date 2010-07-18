@@ -41,6 +41,8 @@ object Application {
 
     def context = state value
 
+    def session = context.invocation.session.get
+
     def using[A](rc: RequestContext)(thunk: => A): A =
       state.withValue (rc) (thunk)
   }
@@ -114,7 +116,7 @@ object Application {
   }
 
   trait ApplicationExecution {
-    def execute(route: Route, request: Request, invocation: Invocation): Response    
+    def execute(route: Route, request: Request, invocation: Invocation): Response
   }
 
   trait ApplicationLike extends PartialFunction[Request, Response]
@@ -137,9 +139,6 @@ object Application {
     def execute(route: Route, request: Request, invocation: Invocation): Response =
       using (RequestContext (request, invocation)) (route action())
 
-    // This does not take http method into consideration at the moment!
-    // this blows up if findRoutes returns Nil. That implies that isDefinedAt
-    // returned a false positive otoh
     def apply(request: Request) = routesFor (request) match {
       case (route, invocation) :: xs => execute (route, request, invocation)
     }
@@ -147,11 +146,12 @@ object Application {
 
   // Ideally, the intrinsics could also be mixed-in (the using() call) as an IntrinsicsHandler
 
-  trait Application
-          extends ApplicationLike 
-          with WwwFormHandling
-          with CookieHandling
-//          with SessionHandling -- Not completed!
+  // The ordering here is vital! CookieHandling must happen before SessionHandling so it
+  // must therefore be *after* in inheritance order
+  trait Application extends ApplicationLike
+    with WwwFormHandling
+    with SessionHandling
+    with CookieHandling
 
   object NotFound extends Application {
     override def isDefinedAt(request: Request) = true

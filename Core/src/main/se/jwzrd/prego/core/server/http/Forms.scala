@@ -36,6 +36,7 @@ trait WwwFormHandling extends ApplicationExecution { ApplicationLike =>
   def parseParameters(body: Iterator[Char]) =
     parsePostBody (body) toMap
 
+  // Remove deprecated calls here by enabling proper use of text encoding
   import java.net.URLDecoder.decode
   def parsePostBody(body: Iterator[Char]) = parameterPairs (body) map parseParameter map {
     case Array(k, v) => (decode(k) -> decode(v))

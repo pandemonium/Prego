@@ -4,6 +4,7 @@ import java.util.Date
 import se.jwzrd.prego.core.server.http.Application.{Route, ApplicationExecution}
 
 /**
+ * Remove deprecated API calls from this file.
  * @author Patrik Andersson <pandersson@gmail.com>
  */
 

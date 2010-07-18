@@ -98,13 +98,48 @@ object Tests {
           <p>{'foo <=}</p>
         </body>
       </html>
+
+    def sessionView =
+      <html>
+        <head>
+          <title>Shopping cart</title>
+        </head>
+        <body>
+          <h1>Session contains</h1>
+          <p>{request.path}</p>
+          <p>Headers: <ul>{request.headers map { case (k, v) => <li>{k} = {v}</li>  }}</ul></p>
+          <p>Session: <ul>{session map { case (k, v) => <li>{k} = {v}</li>  }}</ul></p>
+          <form action="/session-set" method="POST">
+            <input type="text" name="name" />
+            <input type="text" name="value" />
+            <input type="submit" value="save" />
+          </form>
+        </body>
+      </html>
+
+    GET ("/session") ==> sessionView
+
+    POST ("/session-set") ==> {
+      trait StringKeyLike extends Key with Proxy {
+        type Value = AnyRef
+        val value: String
+        override def self = value
+      }
+
+      case class StringKey(value: String) extends StringKeyLike
+
+      session(StringKey ('name <=)) = 'value <=
+
+      sessionView
+    }
   }
 
   def main(args: Array[String]) = {
+
     val mappings = Map(
-      "/prego" -> """C:\Users\Maria\IdeaProjects\Prego\exportToHTML\se\jwzrd\prego\core\server""",
-      "/skp" -> """C:\Users\Maria\Documents\patrik\test"""
+      "/prego" -> """/Users/pa/Documents/Projects/Prego/exportToHTML/se/jwzrd/prego/core"""
     )
+
     val fileServer = FileServer("/fileserve", mappings)
     val composition = Module(fileServer, ShoppingCart, NotFound)
     HttpServer (new InetSocketAddress(8181), composition).run
