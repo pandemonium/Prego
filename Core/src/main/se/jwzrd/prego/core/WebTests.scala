@@ -3,15 +3,14 @@ package se.jwzrd.prego.core
 import java.lang.String
 import java.net.{InetSocketAddress}
 import java.util.Date
+import web.LogScreen
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
  */
-object Tests {
+object WebTests {
   import server.http._
   import server.http.Application._
-  import server.http.Response._
-  import HttpMethod._
 
   object ShoppingCart extends Application {
     GET ("/") ==>
@@ -71,19 +70,19 @@ object Tests {
       view set Cookie('cookieName <=, "hello", new Date(System.currentTimeMillis + 2000000))
     }
 
-    GET ("/bar") ==>
-      <html>
-        <head>
-          <title>Shopping cart</title>
-        </head>
-        <body>
-          <h1>This is the foo section!</h1>
-          <form action="/bar-action" method="POST">
-            <input type="text" name="foo" />
-            <input type="submit" value="save" />
-          </form>
-        </body>
-      </html>
+GET ("/bar") ==>
+  <html>
+    <head>
+      <title>Shopping cart</title>
+    </head>
+    <body>
+      <h1>This is the foo section!</h1>
+      <form action="/bar-action" method="POST">
+        <input type="text" name="foo" />
+        <input type="submit" value="save" />
+      </form>
+    </body>
+  </html>
 
     // This does not work. It appears not to send anything.
     POST ("/bar-action") ==>
@@ -141,7 +140,7 @@ object Tests {
     )
 
     val fileServer = FileServer("/fileserve", mappings)
-    val composition = Module(fileServer, ShoppingCart, NotFound)
+    val composition = Module(LogScreen, NotFound)
     HttpServer (new InetSocketAddress(8181), composition).run
   }
 }

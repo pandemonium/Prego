@@ -1,10 +1,10 @@
 package se.jwzrd.prego.core.server.http
 
 import util.DynamicVariable
-import java.lang.String
 import collection.immutable.Map
 import java.net.URLDecoder
 import java.util.Date
+import java.lang.{Throwable, String}
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
@@ -64,8 +64,6 @@ object Application {
       add (routeTo (handler))
   }
 
-  implicit def httpMethodCanBeRouteSource(method: HttpMethod): RouteSource =
-    new RouteSource (method)
 
   class RouteSource(val method: HttpMethod) {
     def apply(expressionSource: String) = new Origin {
@@ -119,6 +117,15 @@ object Application {
     def execute(route: Route, request: Request, invocation: Invocation): Response
   }
 
+  trait ExceptionHandling extends ApplicationExecution { ApplicationLike =>
+    override abstract def execute(r: Route,
+                                  rq: Request,
+                                  i: Invocation): Response = {
+      import util.control.Exception._
+      allCatch either super.execute (r, rq, i) fold (e => InternalServerError(e), identity)
+    }
+  }
+
   trait ApplicationLike extends PartialFunction[Request, Response]
           with Routing
           with Intrinsics
@@ -148,10 +155,14 @@ object Application {
 
   // The ordering here is vital! CookieHandling must happen before SessionHandling so it
   // must therefore be *after* in inheritance order
+
+  // It would be nice if an Application could be made to "sit" under a path prefix
+  // much like FileServer has a context path
   trait Application extends ApplicationLike
     with WwwFormHandling
     with SessionHandling
     with CookieHandling
+    with ExceptionHandling
 
   object NotFound extends Application {
     override def isDefinedAt(request: Request) = true

@@ -1,8 +1,8 @@
 package se.jwzrd.prego.core.server.http
 
-import java.io.{OutputStream, OutputStreamWriter}
 import se.jwzrd.prego.core.server.Parsing
-import xml.NodeSeq
+import xml.{Text, NodeSeq}
+import java.io.{PrintWriter, StringWriter, OutputStream, OutputStreamWriter}
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
@@ -32,27 +32,45 @@ case class Response(val status: Int,
     "; headers: " + headers
 }
 
-class CookieDecoration[A <% Response] (val response: A) {
-  // todo: change to Cookie*
-  // must first change Response to support multiple headers with the same name
-  def set(cookie: Cookie) =
-    response copy (headers = response.headers + ("Set-Cookie" -> (cookie textRendering)))
-}
 
 // move these to the http package object
 object Response {
   implicit def xmlCanBeGenericResponse(xml: NodeSeq): Response = Content (xml)
   implicit def xmlCanBeMessageBody(xml: NodeSeq): MessageBody = new XmlBody(xml)
-  implicit def responseLikeCanHaveCookies[A <% Response](response: A): CookieDecoration[A] =
-    new CookieDecoration (response)
 }
 
-object StatusReply extends ((Int, String) => Response) {
+// This cannot be tied to HTML so how should I solve this?
+object InternalServerError {
+  def apply(message: String) =
+    template(Text(message))
+
+  def apply(t: Throwable) = {
+    t printStackTrace
+
+    template (<pre>{stacktrace (t)}</pre>)
+  }
+
+  def template(content: NodeSeq): Response =
+    <html>
+      <body>
+        <h1>500 Internal server error</h1>
+        {content}
+      </body>
+    </html>
+
+  def stacktrace(t: Throwable) = {
+    val sw = new StringWriter
+    t printStackTrace new PrintWriter (sw)
+    sw toString
+  }
+}
+
+object StatusReply {
   def apply(status: Int, message: String) =
     new Response (status, message, Map empty, None)
 }
 
-object Redirect extends (String => Response) {
+object Redirect {
   def apply(location: String) =
     new Response (301, "Moved Permanently", Map ("Location" -> location), None)
 }

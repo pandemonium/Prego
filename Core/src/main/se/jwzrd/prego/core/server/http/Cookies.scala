@@ -29,6 +29,13 @@ class Cookie (val name: String, val value: String, val expires: Date = null) {
     "; path=/; domain="
 }
 
+class CookieDecoration[A <% Response] (val response: A) {
+  // todo: change to Cookie*
+  // must first change Response to support multiple headers with the same name
+  def set(cookie: Cookie) =
+    response copy (headers = response.headers + ("Set-Cookie" -> (cookie textRendering)))
+}
+
 trait CookieHandling extends ApplicationExecution { ApplicationLike =>
   override abstract def execute(route: Route,
                                 request: Request,
