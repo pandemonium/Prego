@@ -1,20 +1,36 @@
 package se.jwzrd.prego.core.database
 
 import java.util.Date
-import org.squeryl.{KeyedEntity, Schema}
+import org.squeryl._
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
  */
 object Model extends Schema with DatabaseInfrastructure {
+  import annotations._
+
   val logs = table[Log]("log")
 
-  class Log(var name: String, var date: Date) extends Entity
+  class Log(var name: String,
+            @Column("created_time")
+            var createdTime: Date) extends Entity
 
   object Log {
     def apply(): Log = apply("<new>")
     def apply(name: String): Log = apply(name, new Date())
     def apply(name: String, date: Date): Log = new Log(name, date)
+  }
+
+  val accounts = table[Account]("account")
+
+  class Account(var username: String,
+                var password: String,
+                @Column("created_time")  
+                var createdTime: Date) extends Entity
+
+  object Account {
+    def apply(name: String, password: String): Account =
+      new Account(name, password, new Date())
   }
 
   /**

@@ -1,6 +1,7 @@
 package se.jwzrd.prego.core.server.http
 
-import se.jwzrd.prego.core.server.http.Application.{Route, ApplicationExecution}
+import se.jwzrd.prego.core._
+import server.http.Application.{Route, ApplicationExecution}
 import java.util.concurrent.atomic.AtomicLong
 import collection.mutable.{MapLike, WeakHashMap}
 import java.lang.String
@@ -16,6 +17,8 @@ import java.lang.String
 
 // This thing needs to override equals and hashCode to be meaningful if non-constant
 // keys are to be used.
+
+// Could the keys actually persist an instance of the Manifest?
 trait Key {
   type Value
 
@@ -31,8 +34,7 @@ trait Session extends Iterable[(Any, Any)] {
 
   def iterator = store iterator
 
-  def apply[K <: Key](key: K): K#Value =
-    key read
+  def apply[K <: Key](key: K): K#Value = key read
 
   def update[K <: Key, V <: K#Value](key: K, value: V): Unit =
     store += (key -> value)

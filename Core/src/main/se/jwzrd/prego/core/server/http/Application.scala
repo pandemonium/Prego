@@ -9,7 +9,6 @@ import java.lang.{Throwable, String}
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
  */
-
 object Application {
   object Module {
     def apply(xs: Application*) = new Composition {
@@ -41,7 +40,7 @@ object Application {
 
     def context = state value
 
-    def session = context.invocation.session.get
+    def session: Session = context.invocation.session get
 
     def using[A](rc: RequestContext)(thunk: => A): A =
       state.withValue (rc) (thunk)

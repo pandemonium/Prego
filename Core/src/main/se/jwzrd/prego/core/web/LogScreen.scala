@@ -1,22 +1,18 @@
 package se.jwzrd.prego.core.web
 
 import se.jwzrd.prego.core._
-import database.Model
-import database.Model.Log
+import database.{LogOperations, Model}
 import server._
 import http._
 import Application._
-import java.util.Date
-import java.net.InetSocketAddress
 import org.squeryl.PrimitiveTypeMode._
 import xml.{Node, NodeSeq}
-import runtime.{Int}
-import java.io.IOException
-
+import java.util.Date
+import java.net.InetSocketAddress
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
  */
-object LogScreen extends Application {
+object LogScreen extends Application with LogOperations {
   import Model._
 
   def renderScreen(title: String)(content: NodeSeq): Response = {
@@ -31,12 +27,11 @@ object LogScreen extends Application {
     </html>
   }
 
-  def findAllLogs = transaction {
-    from (Model.logs) { l => select (l) } toSeq
-  }
-
   def renderLogList =
     <ul>{findAllLogs map renderLog}</ul>
+
+  def renderLog(log: Log): NodeSeq =
+    <li><a href={"/log/edit/" + log.id}>{log name} ({log createdTime})</a></li>
 
   GET ("/log") ==> renderScreen ("Log list") {
     <div id="logList">
@@ -58,6 +53,7 @@ object LogScreen extends Application {
     </div>
   }
 
+  // Must be possible to simplify this and reuse the core logic
   POST ("/log/edit/[:id]/save") ==> transaction {
     ('id <=> "0" toLong match {
       case 0 => Right (logs insertOrUpdate new Log ('name <=, new Date ()))
@@ -68,13 +64,4 @@ object LogScreen extends Application {
       } toRight StatusReply (404, "No 'log' by id: " + id)
     }) fold (identity, l => Redirect("/log/edit/" + l.id))
   }
-
-  def renderLog(log: Log): NodeSeq =
-    <li>{log name} ({log date})</li>
-
-  println(Model)
-
-  def main(args: Array[String]) =
-    HttpServer (new InetSocketAddress(8181),
-               Module (LogScreen, NotFound)).run
 }
