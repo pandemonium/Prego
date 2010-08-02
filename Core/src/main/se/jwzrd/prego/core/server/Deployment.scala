@@ -10,7 +10,7 @@ import java.net.{InetAddress, InetSocketAddress}
  */
 trait Deployment {
   val port: Int
-  val host: InetAddress = InetAddress getLocalHost
+  val host: InetAddress = InetAddress getByName "0.0.0.0"
   val configuration: Application
 
   def run = HttpServer (new InetSocketAddress (host, port), configuration) run

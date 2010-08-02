@@ -20,7 +20,7 @@ import java.util.concurrent.{Executors, Executor}
 object HttpServer {
   def apply(address: SocketAddress, processor: RequestProcessor) = {
     val ss = new ServerSocket
-    ss.bind (address)
+    ss bind address
 
 //    new HttpServer (ss, processor, Dispatch.getInstance getAsyncExecutor (Priority NORMAL))
     new HttpServer (ss, processor, Executors newCachedThreadPool)
@@ -35,7 +35,7 @@ object HttpServer {
     def stop = serverSocket close
 
     protected def dispatch(connection: Connection) =
-      connection.send (processor (connection readRequest))
+      connection send (processor (connection readRequest))
 
     case class Connection(socket: Socket) extends ResourceUsage with Http with Parsing {
       def readRequest = parseRequest (socket getInputStream)

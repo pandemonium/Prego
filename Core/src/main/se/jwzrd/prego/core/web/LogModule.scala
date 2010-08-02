@@ -9,16 +9,24 @@ import org.squeryl.PrimitiveTypeMode._
 import xml.{Node, NodeSeq}
 import java.util.Date
 import java.net.InetSocketAddress
+
 /**
+ * This should also contain UI for adding sessions and simliar things
+ * I think. Or should it?
  * @author Patrik Andersson <pandersson@gmail.com>
  */
-object LogScreen extends Application with LogOperations {
+object LogModule extends Application
+                    with LogOperations
+                    with SessionAccountAccess {
   import Model._
 
   def renderScreen(title: String)(content: NodeSeq): Response = {
     <html>
       <head>
         <title>{title}</title>
+        <link type="text/css" href="/serve/file/jquery/jquery-ui-1.8.2.custom.css" rel="stylesheet" />
+        <script type="text/javascript" src="/serve/file/jquery/jquery-1.4.2.min.js"></script>
+        <script type="text/javascript" src="/serve/file/jquery/jquery-ui-1.8.2.custom.min.js"></script>
       </head>
       <body>
         <h1>{title}</h1>
@@ -31,7 +39,7 @@ object LogScreen extends Application with LogOperations {
     <ul>{findAllLogs map renderLog}</ul>
 
   def renderLog(log: Log): NodeSeq =
-    <li><a href={"/log/edit/" + log.id}>{log name} ({log createdTime})</a></li>
+    <li><a href={"/log/" + log.id + "/edit"}>{log name} ({log createdTime})</a></li>
 
   GET ("/log") ==> renderScreen ("Log list") {
     <div id="logList">
@@ -39,13 +47,13 @@ object LogScreen extends Application with LogOperations {
     </div>
   }
 
-  GET ("/log/edit/[:id]") ==> renderScreen ("Log editor") {
+  GET ("/log/[:id]/edit") ==> renderScreen ("Log editor") {
     // pass optional nextUrl to this
     val id = 'id <=> "0" toLong
-    val log = transaction (logs lookup id getOrElse Log())
+    val log: Log = transaction (logs lookup id getOrElse Log(loggedInAccount))
 
     <div id="editor">
-      <form action={"/log/edit/" + id + "/save"} method="POST">
+      <form action={"/log/edit/" + id} method="POST">
         <p>{"id: " + id}</p>
         Name: <input type="text" name="name" value={log name}/>
         <input type="submit" value="Save"/>
@@ -54,9 +62,9 @@ object LogScreen extends Application with LogOperations {
   }
 
   // Must be possible to simplify this and reuse the core logic
-  POST ("/log/edit/[:id]/save") ==> transaction {
+  POST ("/log/[:id]/edit") ==> transaction {
     ('id <=> "0" toLong match {
-      case 0 => Right (logs insertOrUpdate new Log ('name <=, new Date ()))
+      case 0 => Right (logs insertOrUpdate Log (loggedInAccount, 'name <=, new Date ()))
       case id => logs lookup id map { l =>
         l.name = 'name <=
 

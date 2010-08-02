@@ -13,7 +13,7 @@ object DbTests {
     println(Model)
 
     val three = transaction {
-      val l: Log = new Log ("Skluno", new Date ())
+      val l: Log = new Log (1, "Skluno", new Date ())
       val two = Model.logs.insert(l)
       println(two + "; id=" + two.id)
       println(l.id)

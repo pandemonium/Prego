@@ -25,8 +25,8 @@ trait Key {
   implicit def anyToValue(any: Any): Value =
     any.asInstanceOf[Value]
 
-  def read(implicit values: Map[Any, Any]): Value =
-    values(this)
+  def read(implicit values: Map[Any, Any]): Option[Value] =
+    values get this map (_.asInstanceOf[Value])
 }
 
 trait Session extends Iterable[(Any, Any)] {
@@ -34,7 +34,9 @@ trait Session extends Iterable[(Any, Any)] {
 
   def iterator = store iterator
 
-  def apply[K <: Key](key: K): K#Value = key read
+  def get[K <: Key](key: K): Option[K#Value] = key read
+
+  def apply[K <: Key](key: K): K#Value = get (key) get
 
   def update[K <: Key, V <: K#Value](key: K, value: V): Unit =
     store += (key -> value)

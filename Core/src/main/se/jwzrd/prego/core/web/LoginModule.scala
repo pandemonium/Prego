@@ -20,46 +20,40 @@ import xml.{Node, NodeSeq}
  *
  * @author Patrik Andersson <pandersson@gmail.com>
  */
-object Login extends Application with AccountOperations {
+object LoginModule extends Application with AccountOperations with SessionAccountAccess {
   GET ("/login") ==> loginScreen
 
   POST ("/login") ==> {
-    val credentials = ('username <=?) zip ('password <=?)
+    val credentials: Option[(String, String)] = ('username <=?) zip ('password <=?)
     val authentication = authenticate _ tupled
 
     credentials flatMap authentication fold (login, loginScreen)
   }
 
   def login(account: Account): Response = {
-    session (AccountKey) = account
+    loggedInAccount = account
 
-    // get 'next' parameter - redirect to it or to default /
-
-    <html>
-      <head>
-        <title>Index</title>
-      </head>
-      <body>
-        <h1>Prego</h1>
-        <p>Account: {session (AccountKey).username}</p>
-        <ul>
-          <li><a href="/log">Logs</a></li>
-        </ul>
-      </body>
-    </html>
+    Redirect ('redirectBack <=> "/")
   }
 
+  // This isn't very useful at the moment
   def loginScreen: Response =
     <html>
       <head>
         <title>Login</title>
       </head>
-      <body>
-        <form action="/login" method="POST">
-          <input type="text" name="username" value={'username <=> ""}/>
-          <input type="password" name="password"/>
-          <input type="submit" value="Login"/>
-        </form>
-      </body>
+      <body>{loginForm ("/")}</body>
     </html>
+
+  // Overlay labels for username and password
+  def loginForm(redirectBack: String) =
+    <div id="loginForm">
+      <div>Login</div>
+      <form action="/login" method="POST">
+        <input type="hidden" name="redirectBack" value={redirectBack}/>
+        <input type="text" name="username" value={'username <=> ""}/>
+        <input type="password" name="password"/>
+        <input type="submit" value="Login"/>
+      </form>
+    </div>
 }

@@ -3,7 +3,7 @@ package se.jwzrd.prego.core
 import java.lang.String
 import java.net.{InetSocketAddress}
 import java.util.Date
-import web.LogScreen
+import web.LogModule
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
@@ -140,7 +140,7 @@ GET ("/bar") ==>
     )
 
     val fileServer = FileServer("/fileserve", mappings)
-    val composition = Module(LogScreen, NotFound)
+    val composition = Module(LogModule, NotFound)
     HttpServer (new InetSocketAddress(8181), composition).run
   }
 }
