@@ -53,7 +53,15 @@ class FileServer (val root: String,
     Content (new FileBody (lookup (request path) get))
 
   trait MimeTypeLookup {
-    lazy val fileTypeMap = new MimetypesFileTypeMap
+    lazy val fileTypeMap = {
+      val mftm = new MimetypesFileTypeMap
+
+      // Add to configuration someplace
+      mftm addMimeTypes "text/css css"
+      mftm addMimeTypes "application/javascript js"
+
+      mftm
+    }
 
     def mimeType(file: File) =
       fileTypeMap getContentType file

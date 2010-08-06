@@ -7,9 +7,14 @@ import java.util.Date
 import java.lang.{Throwable, String}
 
 /**
+ * This should be an application package object under core.
+ *
  * @author Patrik Andersson <pandersson@gmail.com>
  */
 object Application {
+  // XXX
+  private val globalState = new DynamicVariable[RequestContext](null)
+
   object Module {
     def apply(xs: Application*) = new Composition {
       val applications = xs
@@ -22,28 +27,30 @@ object Application {
 
   trait IntrinsicValues {
     def request: Request
+    def cookies: Seq[Cookie]
+    def cookie(name: String): Option[Cookie]
     def parameters: Map[String, String]
+    def session: Session
   }
 
   trait Intrinsics extends IntrinsicValues {
-    val state = new DynamicVariable[RequestContext] (null)
-
+    val intrinsicState: DynamicVariable[RequestContext]
 
     implicit def parameters: Map[String, String] =
       context.invocation parameters()
 
     def request: Request = context request
 
-    def cookies = context.invocation cookies
+    def cookies: Seq[Cookie] = context.invocation cookies
 
-    def cookie(name: String) = cookies find (_.name == name)
+    def cookie(name: String): Option[Cookie] = cookies find (_.name == name)
 
-    def context = state value
+    def context = intrinsicState value
 
     def session: Session = context.invocation.session get
 
     def using[A](rc: RequestContext)(thunk: => A): A =
-      state.withValue (rc) (thunk)
+      intrinsicState.withValue (rc) (thunk)
   }
 
   trait Routing {
@@ -126,9 +133,11 @@ object Application {
   }
 
   trait ApplicationLike extends PartialFunction[Request, Response]
-          with Routing
-          with Intrinsics
-          with ApplicationExecution {
+                           with Routing
+                           with Intrinsics
+                           with ApplicationExecution {
+    // XXX
+    val intrinsicState = globalState
     implicit val intrinsicValues: IntrinsicValues = this
 
     def isDefinedAt(request: Request) = routes exists {
@@ -158,10 +167,10 @@ object Application {
   // It would be nice if an Application could be made to "sit" under a path prefix
   // much like FileServer has a context path
   trait Application extends ApplicationLike
-    with WwwFormHandling
-    with SessionHandling
-    with CookieHandling
-    with ExceptionHandling
+                       with WwwFormHandling
+                       with SessionHandling
+                       with CookieHandling
+                       with ExceptionHandling
 
   object NotFound extends Application {
     override def isDefinedAt(request: Request) = true

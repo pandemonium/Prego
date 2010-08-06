@@ -3,6 +3,7 @@ package se.jwzrd.prego.core.server.http
 import se.jwzrd.prego.core.server.Parsing
 import xml.{Text, NodeSeq}
 import java.io.{PrintWriter, StringWriter, OutputStream, OutputStreamWriter}
+import java.util.Date
 
 /**
  * @author Patrik Andersson <pandersson@gmail.com>
@@ -65,29 +66,38 @@ object InternalServerError {
   }
 }
 
-object StatusReply {
+trait ServerHeaders {
+  type Headers = Map[String, String]
+
+  def serverHeaders: Headers =
+    Map("Date" -> new Date().toString,
+        "Server" -> "Prego/0.1")
+}
+
+object StatusReply extends ServerHeaders {
   def apply(status: Int, message: String) =
-    new Response (status, message, Map empty, None)
+    new Response (status, message, serverHeaders, None)
 }
 
-object Redirect {
+object Redirect extends ServerHeaders {
   def apply(location: String) =
-    new Response (301, "Moved Permanently", Map ("Location" -> location), None)
+    new Response (301, "Moved Permanently", serverHeaders + ("Location" -> location), None)
 }
 
-object Content {
+object Content extends ServerHeaders {
   def apply[A <% MessageBody](body: A,
-                              headers: Map[String, String] = Map (),
+                              headers: Headers = Map (),
                               status: Int = 200,
                               message: String = "Ok") =
-    new Response (status, message, contentHeaders (body) ++ headers, Some (body))
+    new Response (status, message, compileHeaders (contentHeaders (body), headers), Some (body))
 
-  def contentHeaders(body: MessageBody): Map[String, String] =
+  def compileHeaders(contentHeaders: Headers, headers: Headers) =
+    contentHeaders ++ headers ++ serverHeaders
+
+  def contentHeaders(body: MessageBody): Headers =
     Map ("Content-Type" -> (body contentType),
          "Content-Length" -> (body contentLength).toString)
 }
-
-
 
 trait MessageBody extends (OutputStream => Unit) {
   val contentType: String

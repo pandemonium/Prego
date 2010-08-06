@@ -4,6 +4,9 @@ import java.util.Date
 import se.jwzrd.prego.core.server.http.Application.{Route, ApplicationExecution}
 
 /**
+ * Something is wrong with the cookie handling. Safari would not recognize Set-Cookie
+ * on the first try so there was no session.
+ *
  * Remove deprecated API calls from this file.
  * @author Patrik Andersson <pandersson@gmail.com>
  */
