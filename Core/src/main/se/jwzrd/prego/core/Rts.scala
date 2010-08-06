@@ -11,7 +11,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 
 /**
- * @author Patrik Andersson <pa@king.com>
+ * @author Patrik Andersson <pandersson@gmail.com>
  */
 object Rts {
 
@@ -28,7 +28,6 @@ object Rts {
     lazy val week = "Week" ~> integer
 
     lazy val day = "Day" ~> (integer <~ "- ") ~ date ^^ { case index ~ date => Day (index, date) }
-//    lazy val date = (integer <~ ("/" ?) *) ^^ { case List(m, d, y) => Date (y, m, d) }
     lazy val date = """[^\s]+""".r ^^ { new SimpleDateFormat("MM/dd/yy") parse(_) }
 
     lazy val slotReport = exercise ~ (slotReportEntry *) ^^
